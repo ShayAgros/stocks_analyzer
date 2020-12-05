@@ -1,0 +1,413 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="210mm"
+   height="297mm"
+   viewBox="0 0 210 297"
+   version="1.1"
+   id="svg8"
+   inkscape:version="0.92.3 (2405546, 2018-03-11)"
+   sodipodi:docname="class_diagram.svg">
+  <defs
+     id="defs2">
+    <marker
+       inkscape:stockid="Arrow1Lend"
+       orient="auto"
+       refY="0.0"
+       refX="0.0"
+       id="Arrow1Lend"
+       style="overflow:visible;"
+       inkscape:isstock="true">
+      <path
+         id="path924"
+         d="M 0.0,0.0 L 5.0,-5.0 L -12.5,0.0 L 5.0,5.0 L 0.0,0.0 z "
+         style="fill-rule:evenodd;stroke:#000000;stroke-width:1pt;stroke-opacity:1;fill:#000000;fill-opacity:1"
+         transform="scale(0.8) rotate(180) translate(12.5,0)" />
+    </marker>
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="0.7"
+     inkscape:cx="-1249.9235"
+     inkscape:cy="1159.8721"
+     inkscape:document-units="mm"
+     inkscape:current-layer="layer1"
+     showgrid="false"
+     inkscape:window-width="3436"
+     inkscape:window-height="1396"
+     inkscape:window-x="0"
+     inkscape:window-y="20"
+     inkscape:window-maximized="0" />
+  <metadata
+     id="metadata5">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25795588;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+       id="rect815"
+       width="423.80515"
+       height="443.95538"
+       x="-597.22327"
+       y="-115.77103" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:19.98539543px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.49963486"
+       x="-593.58936"
+       y="-137.33282"
+       id="text819"><tspan
+         sodipodi:role="line"
+         id="tspan817"
+         x="-593.58936"
+         y="-137.33282"
+         style="stroke-width:0.49963486">class: Balance_sheet</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-579.81543"
+       y="-84.755951"
+       id="text823"><tspan
+         sodipodi:role="line"
+         id="tspan821"
+         x="-579.81543"
+         y="-84.755951"
+         style="stroke-width:0.26458332">Method: GET Request to  MSN</tspan></text>
+    <rect
+       y="-248.11356"
+       x="-935.94202"
+       height="269.2626"
+       width="257.04132"
+       id="rect863"
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.15645237;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" />
+    <text
+       id="text867"
+       y="-269.62457"
+       x="-932.25732"
+       style="font-style:normal;font-weight:normal;font-size:19.98539543px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.49963486"
+       xml:space="preserve"><tspan
+         style="stroke-width:0.49963486"
+         y="-269.62457"
+         x="-932.25732"
+         id="tspan865"
+         sodipodi:role="line">class: ticker</tspan></text>
+    <text
+       id="text871"
+       y="-217.04768"
+       x="-918.4834"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       xml:space="preserve"><tspan
+         style="stroke-width:0.26458332"
+         y="-217.04768"
+         x="-918.4834"
+         id="tspan869"
+         sodipodi:role="line">Atributes:</tspan><tspan
+         style="stroke-width:0.26458332"
+         y="-203.81851"
+         x="-918.4834"
+         sodipodi:role="line"
+         id="tspan897">Balance_sheet sheet;</tspan><tspan
+         style="stroke-width:0.26458332"
+         y="-190.58936"
+         x="-918.4834"
+         sodipodi:role="line"
+         id="tspan899" /><tspan
+         style="stroke-width:0.26458332"
+         y="-177.36018"
+         x="-918.4834"
+         sodipodi:role="line"
+         id="tspan917">dictionary income statement;</tspan><tspan
+         style="stroke-width:0.26458332"
+         y="-164.13101"
+         x="-918.4834"
+         sodipodi:role="line"
+         id="tspan915" /><tspan
+         style="stroke-width:0.26458332"
+         y="-150.90186"
+         x="-918.4834"
+         sodipodi:role="line"
+         id="tspan895">dictionary statistics:</tspan><tspan
+         style="stroke-width:0.26458332"
+         y="-137.67268"
+         x="-918.4834"
+         sodipodi:role="line"
+         id="tspan905">   keys: eps, maket cap, share price</tspan><tspan
+         style="stroke-width:0.26458332"
+         y="-124.44352"
+         x="-918.4834"
+         sodipodi:role="line"
+         id="tspan909">             and everything isn't in balace sheet</tspan><tspan
+         style="stroke-width:0.26458332"
+         y="-111.21436"
+         x="-918.4834"
+         sodipodi:role="line"
+         id="tspan913">             or it income statement</tspan></text>
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.265;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;stroke-miterlimit:4;stroke-dasharray:none;marker-end:url(#Arrow1Lend)"
+       d="m -800.20495,-206.53579 h 152.87815 v 63.07561 h 44.9013"
+       id="path919"
+       inkscape:connector-curvature="0" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-913.52722"
+       y="-61.675705"
+       id="text1205"><tspan
+         sodipodi:role="line"
+         id="tspan1203"
+         x="-913.52722"
+         y="-61.675705"
+         style="stroke-width:0.26458332">Method: get income statement from Yahoo</tspan><tspan
+         sodipodi:role="line"
+         x="-913.52722"
+         y="-48.446537"
+         style="stroke-width:0.26458332"
+         id="tspan1219">              </tspan><tspan
+         sodipodi:role="line"
+         x="-913.52722"
+         y="-35.217373"
+         style="stroke-width:0.26458332"
+         id="tspan1213" /></text>
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.17852482;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+       id="rect1221"
+       width="293.30496"
+       height="307.25043"
+       x="-1306.3458"
+       y="-327.47739" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:21.04107285px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.52602679"
+       x="-1241.5442"
+       y="-348.19739"
+       id="text1225"><tspan
+         sodipodi:role="line"
+         id="tspan1223"
+         x="-1241.5442"
+         y="-348.19739"
+         style="stroke-width:0.52602679">Main program</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-1288.1428"
+       y="-223.8512"
+       id="text1229"><tspan
+         sodipodi:role="line"
+         id="tspan1227"
+         x="-1288.1428"
+         y="-223.8512"
+         style="stroke-width:0.26458332">Method: file to symbol dictionary:</tspan><tspan
+         sodipodi:role="line"
+         x="-1288.1428"
+         y="-210.62202"
+         style="stroke-width:0.26458332"
+         id="tspan1231">              take every entry from a file and parse</tspan><tspan
+         sodipodi:role="line"
+         x="-1288.1428"
+         y="-197.39287"
+         style="stroke-width:0.26458332"
+         id="tspan1233">              its symbol and market. Create for this</tspan><tspan
+         sodipodi:role="line"
+         x="-1288.1428"
+         y="-184.1637"
+         style="stroke-width:0.26458332"
+         id="tspan1235">              symbol a class Symbol, in given intervals</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-913.19043"
+       y="-38.642857"
+       id="text1241"><tspan
+         sodipodi:role="line"
+         id="tspan1239"
+         x="-913.19043"
+         y="-38.642857"
+         style="stroke-width:0.26458332">Method: get all needed info for statistics</tspan><tspan
+         sodipodi:role="line"
+         x="-913.19043"
+         y="-25.413691"
+         style="stroke-width:0.26458332"
+         id="tspan1243">              from Yahoo</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-1205.744"
+       y="-203.44044"
+       id="text1247"><tspan
+         sodipodi:role="line"
+         id="tspan1245"
+         x="-1205.744"
+         y="-203.44044"
+         style="stroke-width:0.26458332"> </tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-1285.875"
+       y="-300.95834"
+       id="text1251"><tspan
+         sodipodi:role="line"
+         id="tspan1249"
+         x="-1285.875"
+         y="-300.95834"
+         style="stroke-width:0.26458332">Attributes:</tspan><tspan
+         sodipodi:role="line"
+         x="-1285.875"
+         y="-287.72919"
+         style="stroke-width:0.26458332"
+         id="tspan1253">dictionary symbols:</tspan><tspan
+         sodipodi:role="line"
+         x="-1285.875"
+         y="-274.5"
+         style="stroke-width:0.26458332"
+         id="tspan1255">                  each key is concatenation between</tspan><tspan
+         sodipodi:role="line"
+         x="-1285.875"
+         y="-261.27084"
+         style="stroke-width:0.26458332"
+         id="tspan1257">                  symbol name and market name</tspan></text>
+    <text
+       id="text1267"
+       y="-155.05946"
+       x="-1288.1428"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       xml:space="preserve"><tspan
+         id="tspan1265"
+         style="stroke-width:0.26458332"
+         y="-155.05946"
+         x="-1288.1428"
+         sodipodi:role="line">Method: Print all stocks in descending order of</tspan><tspan
+         style="stroke-width:0.26458332"
+         y="-141.83029"
+         x="-1288.1428"
+         sodipodi:role="line"
+         id="tspan1278">              their P/E ratio</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-1288.1428"
+       y="-107.43445"
+       id="text1284"><tspan
+         id="tspan1282"
+         sodipodi:role="line"
+         x="-1288.1428"
+         y="-107.43445"
+         style="stroke-width:0.26458332">Method: Display full information of a stock</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-1206.5"
+       y="-139.18452"
+       id="text1309"><tspan
+         sodipodi:role="line"
+         id="tspan1307"
+         x="-1206.5"
+         y="-129.82076"
+         style="stroke-width:0.26458332" /></text>
+    <flowRoot
+       xml:space="preserve"
+       id="flowRoot1311"
+       style="fill:black;fill-opacity:1;stroke:none;font-family:sans-serif;font-style:normal;font-weight:normal;font-size:40px;line-height:1.25;letter-spacing:0px;word-spacing:0px"><flowRegion
+         id="flowRegion1313"><rect
+           id="rect1315"
+           width="820"
+           height="1748.5714"
+           x="-1825.7142"
+           y="-997.48029" /></flowRegion><flowPara
+         id="flowPara1317" /></flowRoot>    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-573.57886"
+       y="-39.398811"
+       id="text1743"><tspan
+         sodipodi:role="line"
+         x="-573.57886"
+         y="-39.398811"
+         style="stroke-width:0.26458332"
+         id="tspan1745">balance_sheet ={</tspan><tspan
+         sodipodi:role="line"
+         x="-573.57886"
+         y="-26.169645"
+         style="stroke-width:0.26458332"
+         id="tspan1749">          quarterly: table (row: balance_sheet_field, column: quarter)</tspan><tspan
+         sodipodi:role="line"
+         x="-573.57886"
+         y="-12.940479"
+         style="stroke-width:0.26458332"
+         id="tspan1755">          yearly:    table (row: balance_sheet_field, column: quarter)</tspan><tspan
+         sodipodi:role="line"
+         x="-573.57886"
+         y="0.28868747"
+         style="stroke-width:0.26458332"
+         id="tspan1751" /><tspan
+         sodipodi:role="line"
+         x="-573.57886"
+         y="13.517854"
+         style="stroke-width:0.26458332"
+         id="tspan1753">}</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="-441.66516"
+       y="42.433037"
+       id="text1759"><tspan
+         sodipodi:role="line"
+         id="tspan1757"
+         x="-441.66516"
+         y="51.796806"
+         style="stroke-width:0.26458332" /></text>
+    <text
+       id="text1771"
+       y="50.559525"
+       x="-573.57886"
+       style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       xml:space="preserve"><tspan
+         id="tspan1761"
+         style="stroke-width:0.26458332"
+         y="50.559525"
+         x="-573.57886"
+         sodipodi:role="line">income_statement ={</tspan><tspan
+         id="tspan1763"
+         style="stroke-width:0.26458332"
+         y="63.788692"
+         x="-573.57886"
+         sodipodi:role="line">          quarterly: table (row: income_statement_field, column: quarter)</tspan><tspan
+         id="tspan1765"
+         style="stroke-width:0.26458332"
+         y="77.01786"
+         x="-573.57886"
+         sodipodi:role="line">          yearly:    table (row: income_statement_field, column: quarter)</tspan><tspan
+         id="tspan1767"
+         style="stroke-width:0.26458332"
+         y="90.247025"
+         x="-573.57886"
+         sodipodi:role="line" /><tspan
+         id="tspan1769"
+         style="stroke-width:0.26458332"
+         y="103.47619"
+         x="-573.57886"
+         sodipodi:role="line">}</tspan></text>
+  </g>
+</svg>
