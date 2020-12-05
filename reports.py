@@ -7,6 +7,7 @@ import json
 import pandas as pd
 from os import makedirs
 import time
+import re
 
 site_format = "https://www.msn.com/en-us/money/stockdetailsvnext/financials/{report_name}/{term}/fi-126.1.{symbol}.{market}"
 report_dir = "./msn_reports"
@@ -23,7 +24,7 @@ num_of_fields = {
 } 
 fields ={
 	"balance_sheet": [
-
+                "Period End Date",
                 "Total Current Assets",
                 "Total Assets",
                 "Total Current Liabilities" ,
@@ -34,10 +35,26 @@ fields ={
                 "Ordinary Shares Outstanding"
             ],
     "income_statement" : [
+                "Period End Date",
                 "Net Income",
                 "Total Revenue"
         ]
     }
+
+def store_process_value(term_dict, key, str_value):
+    """Receive a value parsed from the html of a form, and store
+        its value in the dictionary in the correct type"""
+
+    if key == "Period End Date":
+        m = re.match(r"(?P<month>\d+)/(?P<day>\d+)/(?P<year>\d+)", str_value)
+        term_dict[key] = { key: int(value) for key, value in m.groupdict().items()}
+    elif str_value == "-":
+        term_dict[key] = 'NaN'
+    else:
+        value = float(str_value.replace(',', ''))
+        value = value * 10**6
+        term_dict[key] = value
+
 
 # TODO: catch specific exceptions and not just assume what they are
 class Reports:
@@ -66,15 +83,8 @@ class Reports:
                 for ul in document.find("ul").has(selector):
                     p = ul.find(selector)
                     if p.attr("title") == key:
-                        # print(key)
-                        # print(ul.find("li")[i+1].find('p').text())
                         str_value = ul.find("li")[i+1].find('p').attr("title")
-                        if str_value == '-':
-                            str_value = 'NaN'
-                # str_value = document.find("ul").has(selector).find("li")[i+1].find('p').attr("title")
-                value = float(str_value.replace(',', ''))
-                value = value * 10**6
-                term_dict[quarter_name][key] = value
+                        store_process_value(term_dict[quarter_name], key, str_value)
 
     def __fetch_url(self, site_url, site_file):
         response = requests.request("GET", site_url)

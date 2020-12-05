@@ -15,6 +15,41 @@ def get_seconds_from_now(filename):
 
 class YahooInfo:
 
+    def get_stock_price_at_date(self, day, month, year):
+        """Get the stock price at the given date, or the closet after it if the
+        market was close in that date. @date is a dictionary of keys day, month
+        and year"""
+
+        date_str = "{year}-{month}-{day}".format(day=day, month=month, year=year)
+        if date_str in self.stock_prices:
+            return self.stock_prices[date_str]
+
+        # We never fetched the stock for this date, we fetch the stock price
+        # from a day *after* the requested one because yahoo data (for some
+        # reason) returns the stock one day earlier than requested
+        date      = datetime.date(day=day, month=month, year=year) + datetime.timedelta(days=1)
+        next_date = date + datetime.timedelta(days=10)
+        
+        # return value is a pandas table in the form
+        #                  Open      High        Low      Close    Volume  Dividends  Stock Splits
+        # Date                                                                                    
+        # 2018-03-14  91.601436  91.88071  90.041359  90.378410  32132000          0             0
+        stocks_data = self.yf_symbol.history(start = date, end = next_date)
+        for entry in range(len(stocks_data)):
+            stock = stocks_data.iloc[entry]
+            stock_date  = stock.name.strftime("%Y-%m-%d")
+            stock_price = stock["Close"]
+            self.stock_prices[stock_date] = stock_price
+
+        # save this data for future uses
+        data = {"info": self.info, "stock_prices": self.stock_prices}
+        with open(self.file_path, "w") as f:
+            json.dump(data, f)
+
+        # return the first value in the table which is the closest stock price
+        # to the requested date
+        return stocks_data.iloc[0]["Close"]
+
     def __init__(self, symbol):
 
         self.symbol = symbol
@@ -22,20 +57,24 @@ class YahooInfo:
         file_name = file_format.format(symbol = self.symbol)
         file_path = path.join(yahoo_dir, file_name)
 
+        self.file_path = file_path
+
+        self.yf_symbol = yf.Ticker(self.symbol)
+
         if not path.isfile(file_path) or get_seconds_from_now(file_path) > 3600 * 24:
             try:
-                self.yf_symbol = yf.Ticker(self.symbol)
                 info = self.yf_symbol.info
-                stock_price = self.yf_symbol.history("5d")["Close"].iloc[-1]
             except:
                 raise Exception("Failed to create yf symbol {} or fetch its info".format(self.symbol))
 
             makedirs(yahoo_dir, exist_ok=True)
-            data = {"info": info, "stock_price": stock_price}
+
+            # initialize stock prices to be an empty dictionary
+            data = {"info": info, "stock_prices": dict()}
             with open(file_path, "w") as f:
                 json.dump(data, f)
 
         with open(file_path, "r") as f:
             data = json.load(f)
             self.info = data["info"]
-            self.stock_price = data["stock_price"]
+            self.stock_prices = data["stock_prices"]

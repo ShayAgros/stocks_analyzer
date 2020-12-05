@@ -18,6 +18,8 @@ class Ticker:
         last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
         last_quarterly_income_statement = self.reports.get_last_report("quarterly", "income_statement")
 
+        yahoo_info = self.yahoo_info
+
         # calculate eps
         earnings = last_yearly_income_statement["Net Income"]
         shares_outstanding = last_yearly_balance_sheet["Ordinary Shares Outstanding"]
@@ -29,7 +31,8 @@ class Ticker:
         statistics["book_value"] = total_equity / shares_outstanding
 
         # price to book
-        stock_price = statistics["stock_price"]
+        balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
+        stock_price = yahoo_info.get_stock_price_at_date(**balance_sheet_date)
         book_value  = statistics["book_value"]
         statistics["price_to_book"] = stock_price / book_value
 
@@ -84,7 +87,6 @@ class Ticker:
             "naive_time_to_profit": None,  # in years
 
             # fetched attributes
-            "stock_price": self.yahoo_info.stock_price,
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
             "sector": self.yahoo_info.info["sector"],
             "industry": self.yahoo_info.info["industry"],
