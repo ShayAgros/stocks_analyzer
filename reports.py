@@ -109,12 +109,16 @@ class Reports:
 
         self.__parse_fields(term, report_name)
 
-    def get_last_report(self, term, report_name):
+    def get_reports_ascending(self, term, report_name):
         report_dict = getattr(self, report_name)
         term_dict = report_dict[term]
 
         ordered_terms = sorted(term_dict.keys())
-        return term_dict[ordered_terms[-1]]
+        return [term_dict[t] for t in ordered_terms]
+
+    def get_last_report(self, term, report_name):
+        ordered_reports = self.get_reports_ascending(term, report_name)
+        return ordered_reports[-1]
 
     def __init__(self, symbol, market):
         self.symbol     = symbol

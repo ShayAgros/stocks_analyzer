@@ -2,6 +2,8 @@
 
 from reports import Reports
 from yfinance_info import YahooInfo
+import numpy as np
+from numpy.polynomial.polynomial import Polynomial
 import json
 
 # TODO: the yahoo API doesn't allow to specify market easily,
@@ -11,8 +13,11 @@ class Ticker:
 
     def __calculate_stats(self):
         statistics = self.statistics
+        approximate_bond_10 = 0.95 * 0.01  # updated @ 19.12.2020
+        approximate_bond_30 = 1.7  * 0.01  # updated @ 19.12.2020
+        all_yearly_income_statements = self.reports.get_reports_ascending("annual", "income_statement")
         last_yearly_balance_sheet = self.reports.get_last_report("annual", "balance_sheet")
-        last_yearly_income_statement = self.reports.get_last_report("annual", "income_statement")
+        last_yearly_income_statement = all_yearly_income_statements[-1]
 
         last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
         last_quarterly_income_statement = self.reports.get_last_report("quarterly", "income_statement")
@@ -47,6 +52,16 @@ class Ticker:
         price_to_book_value = statistics["price_to_book"]
         statistics["pe*bv"] = pe_ratio * price_to_book_value
 
+        # basic_discount_value - todo: check my formula
+        #   current book_value plus the summary of the discounted eps till the end of time
+        #   assumes fixed eps and a rather arbitrary bond yield rate
+        approximate_bond = approximate_bond_30
+        statistics["basic_discount_value"] = book_value + eps*((1+approximate_bond)/approximate_bond)
+
+        # basic_discount_ratio
+        discount_value = statistics["basic_discount_value"]
+        statistics["basic_discount_ratio"] = discount_value / stock_price
+
         # current_ratio
         current_assets = last_quarterly_balance_sheet["Total Current Assets"]
         current_liabilities = last_quarterly_balance_sheet["Total Current Liabilities"]
@@ -61,6 +76,14 @@ class Ticker:
 
         # naive time to profit
         statistics["naive_time_to_profit"] = (stock_price - book_value) / eps
+
+        # earnings_trend
+        #   - fetching only 4 years, so I use all of them
+        #   - not the same as eps in the case of a change in the shares number
+        yearly_earnings = [statement["Net Income"] for statement in all_yearly_income_statements]
+        poly_fit = Polynomial.fit(range(len(yearly_earnings)), yearly_earnings, deg=1)
+        earnings_fit = poly_fit.convert().coef
+        statistics["earnings_yearly_trend"] = earnings_fit[1]  # keep the slope
 
     def __init__(self, symbol, market):
 
@@ -80,10 +103,13 @@ class Ticker:
             "pe_ratio": None,
             "ep_ratio[%]": None,
             "pe*bv": None,
+            "basic_discount_value": None,
+            "basic_discount_ratio": None,
             "current_ratio": None,
             "debt_to_equity": None,
             "market_cap": None,
             "naive_time_to_profit": None,  # in years
+            "earnings_yearly_trend": None,
 
             # fetched attributes
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
