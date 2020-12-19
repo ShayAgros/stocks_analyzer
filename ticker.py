@@ -4,7 +4,6 @@ from reports import Reports
 from yfinance_info import YahooInfo
 import json
 
-
 # TODO: the yahoo API doesn't allow to specify market easily,
 # so currently we just ignore it. Maybe we should switch to some
 # more robust service
@@ -94,6 +93,11 @@ class Ticker:
 
         self.__calculate_stats()
 
-        print(json.dumps(self.statistics, indent=4))
+        print(json.dumps({"symbol":self.symbol, **self.statistics}, indent=4))
 
-msft = Ticker("nvda", "nasdaq")
+        last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
+        balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
+        stock_price = self.yahoo_info.get_stock_price_at_date(**balance_sheet_date)
+        print("stock price at last report: " + str(stock_price))
+
+# msft = Ticker("nvda", "nasdaq")
