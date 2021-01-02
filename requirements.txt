@@ -1,0 +1,9 @@
+yfinance
+python-csv
+json
+pandas
+requests
+numpy
+datetime
+htmldom
+matplotlib
