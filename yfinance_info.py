@@ -20,7 +20,7 @@ class YahooInfo:
         market was close in that date. @date is a dictionary of keys day, month
         and year"""
 
-        date_str = "{year}-{month}-{day}".format(day=day, month=month, year=year)
+        date_str = "{year}-{month}-{day}".format(day=str(day).zfill(2), month=str(month).zfill(2), year=year)
         if date_str in self.stock_prices:
             return self.stock_prices[date_str]
 
@@ -44,7 +44,7 @@ class YahooInfo:
         # save this data for future uses
         data = {"info": self.info, "stock_prices": self.stock_prices}
         with open(self.file_path, "w") as f:
-            json.dump(data, f)
+            json.dump(data, f, indent=4)
 
         # return the first value in the table which is the closest stock price
         # to the requested date
@@ -62,17 +62,23 @@ class YahooInfo:
         self.yf_symbol = yf.Ticker(self.symbol)
 
         if not path.isfile(file_path) or get_seconds_from_now(file_path) > 3600 * 24:
+            force_old_data = False
             try:
                 info = self.yf_symbol.info
             except:
-                raise Exception("Failed to create yf symbol {} or fetch its info".format(self.symbol))
+                if path.isfile(file_path):
+                    print("Failed to fetch fresh yf info for symbol {}, trying to use old data".format(self.symbol))
+                    force_old_data = True
+                else:
+                    raise Exception("Failed to create yf symbol {} or fetch its info".format(self.symbol))
 
             makedirs(yahoo_dir, exist_ok=True)
 
             # initialize stock prices to be an empty dictionary
-            data = {"info": info, "stock_prices": dict()}
-            with open(file_path, "w") as f:
-                json.dump(data, f)
+            if not force_old_data:
+                data = {"info": info, "stock_prices": dict()}
+                with open(file_path, "w") as f:
+                    json.dump(data, f, indent=4)
 
         with open(file_path, "r") as f:
             data = json.load(f)

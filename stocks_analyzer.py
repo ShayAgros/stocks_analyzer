@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 from ticker import Ticker
+import pandas as pd
+
+
+csv_path = "output.csv"
 
 # TODO: replace all silly prints with proper log functions that indicate an
-# error
-
-# def sort_stocks_by_field()
-
-# def create_tickers_list_from_file(file_name) -> return list of class Ticker
+#   error
 
 def create_tickers_from_symbol_names(symbol_list):
     """ Get a list of dictionaries that contain symbol ticker name and its
@@ -21,6 +21,8 @@ def create_tickers_from_symbol_names(symbol_list):
             print("Failed to create a ticker for {symbol}:{market}".format(
                 symbol = symbol,
                 market = market))
+            # debug: raise
+            continue
         tickers_list.append(ticker)
 
     return tickers_list
@@ -58,8 +60,23 @@ def filter_stocks_by_fields(ticker, fields):
                 passes &= field >= fvalue
     return passes
 
+
+def extract_statistics(ticker, show_fields):
+    return ticker.statistics  # todo: implement, remove ignored fields, only minor importance
+
+
 # TODO: This would output a csv file containing the statistics for each of the tickers
-# def stocks_list_to_csv(tickers_list, show_fields=None, max_count=None):
+def stocks_list_to_csv(tickers_list, out_path, show_fields=None, max_count=None):
+    if max_count and max_count < len(tickers_list):
+        tickers_list = tickers_list[:max_count]
+    # as dictionary:
+    d = {(ticker.symbol): extract_statistics(ticker, show_fields).values() for ticker in tickers_list}
+    # ---- As Dataframe: ----  todo: handle the empty list case
+    df = pd.DataFrame.from_dict(d, orient='index', columns=tickers_list[0].statistics.keys())
+    print(df)
+
+    df.to_csv(out_path)
+
 
         
 
@@ -71,19 +88,19 @@ def main():
 
     tickers = create_tickers_from_symbol_names( [ ["MSFT", "NASDAQ"], ["AAPL", "NASDAQ"], ["NVDA", "NASDAQ"] ] )
 
-    sorting_function = lambda stock: filter_stocks_by_fields(stock, [["eps", 4, False], ["sector", "Technology"]])
-    filtered_stocks = filter(sorting_function, tickers)
+    filtering_function = lambda stock: filter_stocks_by_fields(stock, [["eps", 3, False], ["sector", "Technology"]])
+    filtered_stocks = filter(filtering_function, tickers)
+    sorted_stocks = sort_stocks_by_fields(filtered_stocks, [["book_value", True], ["eps", True]])
 
-    # sorted_stocks = sort_stocks_by_fields(tickers, [["book_value", True], ["eps", True]])
-
-    for stock in filtered_stocks:
-        s_name  = stock.symbol
-        s_eps   = stock.statistics["eps"]
-        s_bv    = stock.statistics["book_value"]
-        print("{name}:  eps: {eps}  book_value: {book_value}".format(
-                name = s_name,
-                eps = s_eps,
-                book_value = s_bv))
+    stocks_list_to_csv(sorted_stocks, csv_path)
+    # for stock in filtered_stocks:
+    #     s_name  = stock.symbol
+    #     s_eps   = stock.statistics["eps"]
+    #     s_bv    = stock.statistics["book_value"]
+    #     print("{name}:  eps: {eps}  book_value: {book_value}".format(
+    #             name = s_name,
+    #             eps = s_eps,
+    #             book_value = s_bv))
 
 
 if __name__ == '__main__':
