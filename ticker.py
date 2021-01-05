@@ -16,7 +16,8 @@ class Ticker:
         approximate_bond_10 = 0.95 * 0.01  # updated @ 19.12.2020
         approximate_bond_30 = 1.7  * 0.01  # updated @ 19.12.2020
         all_yearly_income_statements = self.reports.get_reports_ascending("annual", "income_statement")
-        last_yearly_balance_sheet = self.reports.get_last_report("annual", "balance_sheet")
+        all_yearly_balance_sheets = self.reports.get_reports_ascending("annual", "balance_sheet")
+        last_yearly_balance_sheet = all_yearly_balance_sheets[-1]
         last_yearly_income_statement = all_yearly_income_statements[-1]
 
         last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
@@ -85,6 +86,12 @@ class Ticker:
         earnings_fit = poly_fit.convert().coef
         statistics["earnings_yearly_trend"] = earnings_fit[1]  # keep the slope
 
+        # equity_trend
+        yearly_equity = [sheet["Total Equity"] for sheet in all_yearly_balance_sheets]
+        poly_fit = Polynomial.fit(range(len(yearly_equity)), yearly_equity, deg=1)
+        equity_fit = poly_fit.convert().coef
+        statistics["equity_yearly_trend"] = equity_fit[1]  # keep the slope
+
     def __init__(self, symbol, market):
 
         self.symbol = symbol.upper()
@@ -110,6 +117,7 @@ class Ticker:
             "market_cap": None,
             "naive_time_to_profit": None,  # in years
             "earnings_yearly_trend": None,
+            "equity_yearly_trend": None,
 
             # fetched attributes
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
