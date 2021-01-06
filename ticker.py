@@ -5,6 +5,8 @@ from yfinance_info import YahooInfo
 import numpy as np
 from numpy.polynomial.polynomial import Polynomial
 import json
+import matplotlib.pyplot as plt
+
 
 # TODO: the yahoo API doesn't allow to specify market easily,
 # so currently we just ignore it. Maybe we should switch to some
@@ -81,12 +83,13 @@ class Ticker:
         # earnings_trend
         #   - fetching only 4 years, so I use all of them
         #   - not the same as eps in the case of a change in the shares number
+        #   - maybe save the trend also in percentages?
         yearly_earnings = [statement["Net Income"] for statement in all_yearly_income_statements]
         poly_fit = Polynomial.fit(range(len(yearly_earnings)), yearly_earnings, deg=1)
         earnings_fit = poly_fit.convert().coef
         statistics["earnings_yearly_trend"] = earnings_fit[1]  # keep the slope
 
-        # equity_trend
+        # equity_trend  (not book_value)
         yearly_equity = [sheet["Total Equity"] for sheet in all_yearly_balance_sheets]
         poly_fit = Polynomial.fit(range(len(yearly_equity)), yearly_equity, deg=1)
         equity_fit = poly_fit.convert().coef
@@ -134,4 +137,28 @@ class Ticker:
         stock_price = self.yahoo_info.get_stock_price_at_date(**balance_sheet_date)
         print("stock price at last report: " + str(stock_price))
 
-# msft = Ticker("nvda", "nasdaq")
+    def get_price_graph(self, term):
+        pass  # todo: return a price vector (and time) to plot in self.plot_me
+
+    def plot_me(self):
+        # todo: change to bv & eps.   plus, the 1st axis is for the price
+        plot_fields = (("income_statement", "Net Income"), ("balance_sheet", "Total Equity"))
+        plot_terms = ("annual", "quarterly")
+
+        fig = plt.figure()
+        plt.title(self.symbol)
+        axs = fig.subplots(len(plot_fields)+1, len(plot_terms))
+
+        for row, field in enumerate(plot_fields):
+            row += 1
+            for col, term in enumerate(plot_terms):
+                ax = axs[row, col]
+                #ax.title = field[1]
+                plot_reports = self.reports.get_reports_ascending(term, field[0])
+                values = [report[field[1]] for report in plot_reports]
+                times = range(len(values))  # change to dates
+                ax.plot(times, values)
+        plt.show()
+
+msft = Ticker("nvda", "nasdaq")
+msft.plot_me()

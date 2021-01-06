@@ -50,6 +50,9 @@ class YahooInfo:
         # to the requested date
         return stocks_data.iloc[0]["Close"]
 
+    def get_stock_price_in_range(self, from_day, from_month, from_year, to_day, to_month, to_year):
+        pass   # todo
+
     def __init__(self, symbol):
 
         self.symbol = symbol
