@@ -20,6 +20,8 @@ class YahooInfo:
         market was close in that date. @date is a dictionary of keys day, month
         and year"""
 
+        # Use zfill to make 6 appear as 06. This would make it compatible with
+        # the format in the cache file
         date_str = "{year}-{month}-{day}".format(day=str(day).zfill(2), month=str(month).zfill(2), year=year)
         if date_str in self.stock_prices:
             return self.stock_prices[date_str]
@@ -40,6 +42,12 @@ class YahooInfo:
             stock_date  = stock.name.strftime("%Y-%m-%d")
             stock_price = stock["Close"]
             self.stock_prices[stock_date] = stock_price
+
+        # In case the closest stock price to date is not the requested date in
+        # this function, make sure the requested date is cached as well.
+        # E.g. if the requested date is Saturday, no stock data would be
+        # available for this date
+        self.stock_prices[date_str] = stocks_data.iloc[0]["Close"]
 
         # save this data for future uses
         data = {"info": self.info, "stock_prices": self.stock_prices}
