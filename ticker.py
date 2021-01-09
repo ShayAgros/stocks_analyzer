@@ -131,8 +131,6 @@ class Ticker:
 
         self.__calculate_stats()
 
-        print(json.dumps({"symbol":self.symbol, **self.statistics}, indent=4))
-
         last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
         balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
         stock_price = self.yahoo_info.get_stock_price_at_date(**balance_sheet_date)
