@@ -16,6 +16,8 @@ def create_tickers_from_symbol_names(symbol_list):
     tickers_list = list()
     for symbol, market in symbol_list:
         try:
+            print("Fetching data for {symbol}:{market}\n".format(symbol = symbol,
+                market = market))
             ticker = Ticker(symbol, market)
         except:
             print("Failed to create a ticker for {symbol}:{market}".format(
@@ -77,8 +79,21 @@ def stocks_list_to_csv(tickers_list, out_path, show_fields=None, max_count=None)
 
     df.to_csv(out_path)
 
+def create_tickers_from_file(file_path):
+    """The function receives a path to a file containing entries of the form
+    'TICKER MARKET' (e.g. 'AAPL NASDAQ') and returns a Ticker list"""
 
-        
+    symbol_list = []
+    with open(file_path, "r") as f:
+        print("Querying file " + file_path)
+        for line in f:
+            line_attr = line.split()
+            # print("Ticker: {ticker}   Market: {market}".format(
+                # ticker = line_attr[0],
+                # market = line_attr[1]))
+            symbol_list.append(line_attr)
+
+    return create_tickers_from_symbol_names(symbol_list)
 
 def main():
 
