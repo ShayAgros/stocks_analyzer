@@ -6,6 +6,7 @@ import numpy as np
 from numpy.polynomial.polynomial import Polynomial
 import json
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 
 # TODO: the yahoo API doesn't allow to specify market easily,
@@ -138,26 +139,43 @@ class Ticker:
         print("stock price at last report: " + str(stock_price))
 
     def get_price_graph(self, term):
-        pass  # todo: return a price vector (and time) to plot in self.plot_me
+        dates = self.reports.get_reports_dates(term)
+        start_date = dates[0]
+        end_date   = dates[-1]
+        date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date)
+        return date_vector, price_vector
 
     def plot_me(self):
-        # todo: change to bv & eps.   plus, the 1st axis is for the price
+        # todo: change to bv & eps as a better representation of the stock value
         plot_fields = (("income_statement", "Net Income"), ("balance_sheet", "Total Equity"))
         plot_terms = ("annual", "quarterly")
 
         fig = plt.figure()
+        fig.set_tight_layout(True)
         plt.title(self.symbol)
+        plt.box(on=None)
         axs = fig.subplots(len(plot_fields)+1, len(plot_terms))
 
-        for row, field in enumerate(plot_fields):
-            row += 1
-            for col, term in enumerate(plot_terms):
+        for col, term in enumerate(plot_terms):
+            for row, field in enumerate([None, *plot_fields]):
                 ax = axs[row, col]
-                #ax.title = field[1]
-                plot_reports = self.reports.get_reports_ascending(term, field[0])
-                values = [report[field[1]] for report in plot_reports]
-                times = range(len(values))  # change to dates
-                ax.plot(times, values)
+                if row == 0:
+                    # price graph:
+                    # since this is the first graph, show the term in the title
+                    ax.set_title(term)
+                    times, values = self.get_price_graph(term)
+                else:
+                    # statistics graph:
+                    ax.set_title(field[1])
+                    plot_reports = self.reports.get_reports_ascending(term, field[0])
+                    values = [report[field[1]] for report in plot_reports]
+                    times = self.reports.get_reports_dates(term)
+
+                locator = mdates.AutoDateLocator(minticks=3, maxticks=7)
+                formatter = mdates.ConciseDateFormatter(locator)
+                ax.xaxis.set_major_locator(locator)
+                ax.xaxis.set_major_formatter(formatter)
+                ax.plot_date(times, values, '-')
         plt.show()
 
 msft = Ticker("nvda", "nasdaq")

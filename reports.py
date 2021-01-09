@@ -8,6 +8,7 @@ import pandas as pd
 from os import makedirs
 import time
 import re
+import datetime
 
 site_format = "https://www.msn.com/en-us/money/stockdetailsvnext/financials/{report_name}/{term}/fi-126.1.{symbol}.{market}"
 report_dir = "./msn_reports"
@@ -119,6 +120,13 @@ class Reports:
     def get_last_report(self, term, report_name):
         ordered_reports = self.get_reports_ascending(term, report_name)
         return ordered_reports[-1]
+
+    def get_reports_dates(self, term):
+        # it doesnt really matter if we take the dates from a balance_sheet or income_statement:
+        reports_ordered = self.get_reports_ascending(term, 'balance_sheet')
+        dates = [report["Period End Date"] for report in reports_ordered]
+        dates = [datetime.datetime(date["year"], date["month"], date["day"]) for date in dates]
+        return dates
 
     def __init__(self, symbol, market):
         self.symbol     = symbol
