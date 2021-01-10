@@ -20,27 +20,37 @@ market_to_msn_market = {
     }
 
 num_of_fields = {
-	"annual":4,
-	"quarterly":4
+    "annual": 4,
+    "quarterly": 4
 } 
-fields ={
-	"balance_sheet": [
-                "Period End Date",
-                "Total Current Assets",
-                "Total Assets",
-                "Total Current Liabilities" ,
-                "Total Liabilities",
-                "Current Debt",
-                "Long Term Debt",
-                "Total Equity",
-                "Ordinary Shares Outstanding"
-            ],
-    "income_statement" : [
-                "Period End Date",
-                "Net Income",
-                "Total Revenue"
-        ]
-    }
+fields = {
+    "balance_sheet": [
+        "Period End Date",
+        "Total Current Assets",
+        "Total Assets",
+        "Total Current Liabilities" ,
+        "Total Liabilities",
+        "Current Debt",
+        "Long Term Debt",
+        "Total Equity",
+        "Ordinary Shares Outstanding"
+    ],
+    "income_statement": [
+        "Period End Date",
+        "Net Income",
+        "Total Revenue"
+    ],
+    "cash_flow": [
+        "Period End Date",
+        "Cash Flow from Operating Activities",
+        "Cash Flow from Investing Activities",  # Warnning! in msft this field is '-', but the graph is still viewable
+        "Cash Flow from Financing Activities",
+        "Change in Cash",                       # Im using this field minus the operating as a more stable replacement
+                                                # to the sum of investing + financing
+        "Common Stock Dividends Paid"
+    ]
+}
+
 
 def store_process_value(term_dict, key, str_value):
     """Receive a value parsed from the html of a form, and store
@@ -146,9 +156,12 @@ class Reports:
 
         self.balance_sheet = dict()
         self.income_statement = dict()
+        self.cash_flow = dict()
 
         self.__parse_and_save_report("quarterly", "balance_sheet")
         self.__parse_and_save_report("quarterly", "income_statement")
+        self.__parse_and_save_report("quarterly", "cash_flow")
 
         self.__parse_and_save_report("annual", "balance_sheet")
         self.__parse_and_save_report("annual", "income_statement")
+        self.__parse_and_save_report("annual", "cash_flow")

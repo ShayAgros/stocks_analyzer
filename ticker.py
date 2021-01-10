@@ -20,8 +20,10 @@ class Ticker:
         approximate_bond_30 = 1.7  * 0.01  # updated @ 19.12.2020
         all_yearly_income_statements = self.reports.get_reports_ascending("annual", "income_statement")
         all_yearly_balance_sheets = self.reports.get_reports_ascending("annual", "balance_sheet")
+        all_yearly_cash_flows = self.reports.get_reports_ascending("annual", "cash_flow")
         last_yearly_balance_sheet = all_yearly_balance_sheets[-1]
         last_yearly_income_statement = all_yearly_income_statements[-1]
+        last_yearly_cash_flow = all_yearly_cash_flows[-1]
 
         last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
         last_quarterly_income_statement = self.reports.get_last_report("quarterly", "income_statement")
@@ -32,6 +34,15 @@ class Ticker:
         earnings = last_yearly_income_statement["Net Income"]
         shares_outstanding = last_yearly_balance_sheet["Ordinary Shares Outstanding"]
         statistics["eps"] = earnings / shares_outstanding
+
+        # operating cash-flow per share
+        operating_cash_flow = last_yearly_cash_flow["Cash Flow from Operating Activities"]
+        statistics["operating_cfps"] = operating_cash_flow / shares_outstanding
+
+        # calculate non-operating(financing and investing) cash-flow per share
+        total_cash_flow = last_yearly_cash_flow["Change in Cash"]
+        non_operating_cash_flow = total_cash_flow - operating_cash_flow
+        statistics["non_operating_cfps"] = operating_cash_flow / shares_outstanding
 
         # book value
         total_equity = last_quarterly_balance_sheet["Total Equity"]
@@ -56,6 +67,9 @@ class Ticker:
         price_to_book_value = statistics["price_to_book"]
         statistics["pe*bv"] = pe_ratio * price_to_book_value
 
+        # price_to_operating_cf_ratio
+        statistics["pocf_ratio"] = stock_price / statistics["operating_cfps"]
+
         # basic_discount_value - todo: check my formula
         #   current book_value plus the summary of the discounted eps till the end of time
         #   assumes fixed eps and a rather arbitrary bond yield rate
@@ -78,6 +92,10 @@ class Ticker:
         # market cap
         statistics["market_cap"] = stock_price * shares_outstanding
 
+        # dividends
+        dividends = last_yearly_cash_flow["Common Stock Dividends Paid"] / shares_outstanding
+        statistics["dividends"] = dividends
+
         # naive time to profit
         statistics["naive_time_to_profit"] = (stock_price - book_value) / eps
 
@@ -96,6 +114,37 @@ class Ticker:
         equity_fit = poly_fit.convert().coef
         statistics["equity_yearly_trend"] = equity_fit[1]  # keep the slope
 
+        # operating_cash_flow_trend
+        yearly_operating_cash_flow = np.array([flow["Cash Flow from Operating Activities"] for flow in all_yearly_cash_flows])
+        poly_fit = Polynomial.fit(range(len(yearly_operating_cash_flow)), yearly_operating_cash_flow, deg=1)
+        operating_cf_fit = poly_fit.convert().coef
+        statistics["operating_cf_yearly_trend"] = operating_cf_fit[1]  # keep the slope
+        # minimal_operating_cf
+        statistics["minimal_operating_cf"] = np.min(yearly_operating_cash_flow)
+
+        # non_operating_cash_flow_trend
+        yearly_total_cash_flow = np.array([flow["Change in Cash"] for flow in all_yearly_cash_flows])
+        yearly_non_operating_cash_flow = yearly_total_cash_flow - yearly_operating_cash_flow
+        poly_fit = Polynomial.fit(range(len(yearly_non_operating_cash_flow)), yearly_non_operating_cash_flow, deg=1)
+        non_operating_cf_fit = poly_fit.convert().coef
+        statistics["non_operating_cf_yearly_trend"] = non_operating_cf_fit[1]  # keep the slope
+        # maximal_non_operating_cf
+        statistics["maximal_non_operating_cf"] = np.min(yearly_non_operating_cash_flow)
+
+        self._calculate_quick_filter()
+
+    def _calculate_quick_filter(self):
+        passed = self.statistics["eps"] > 0 and \
+                 self.statistics["book_value"] > 0 and \
+                 self.statistics["pe*bv"] < 65 and \
+                 self.statistics["earnings_yearly_trend"] > 0 and \
+                 self.statistics["equity_yearly_trend"] > 0 and \
+                 self.statistics["operating_cf_yearly_trend"] > 0 and \
+                 self.statistics["non_operating_cf_yearly_trend"] < 0 and \
+                 self.statistics["maximal_non_operating_cf"] < 0 and \
+                 self.statistics["minimal_operating_cf"] > 0
+        self.statistics["quick_filter"] = passed
+
     def __init__(self, symbol, market):
 
         self.symbol = symbol.upper()
@@ -107,26 +156,37 @@ class Ticker:
         self.reports = Reports(self.symbol, self.market)
 
         self.statistics = {
-            # calculated attributes
+            # calculated attributes (the order here is the order in the csv)
             "eps": None,
             "book_value": None,
             "price_to_book": None,
             "pe_ratio": None,
             "ep_ratio[%]": None,
             "pe*bv": None,
+            "operating_cfps": None,
+            "non_operating_cfps": None,
+            "pocf_ratio": None,
             "basic_discount_value": None,
             "basic_discount_ratio": None,
             "current_ratio": None,
             "debt_to_equity": None,
             "market_cap": None,
             "naive_time_to_profit": None,  # in years
+            "minimal_operating_cf": None,
+            "maximal_non_operating_cf": None,
             "earnings_yearly_trend": None,
             "equity_yearly_trend": None,
+            "operating_cf_yearly_trend": None,
+            "non_operating_cf_yearly_trend": None,
+            "dividends": None,
 
             # fetched attributes
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
             "sector": self.yahoo_info.info["sector"],
             "industry": self.yahoo_info.info["industry"],
+
+            # quick_filter:
+            "quick_filter": None,
             }
 
         self.__calculate_stats()
@@ -176,5 +236,5 @@ class Ticker:
                 ax.plot_date(times, values, '-')
         plt.show()
 
-msft = Ticker("nvda", "nasdaq")
-msft.plot_me()
+#msft = Ticker("nvda", "nasdaq")
+#msft.plot_me()
