@@ -1,2 +1,5 @@
 __pycache__
 .idea
+yahoo_files/
+msn_reports/
+output.csv
