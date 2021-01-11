@@ -67,6 +67,10 @@ class Ticker:
         price_to_book_value = statistics["price_to_book"]
         statistics["pe*bv"] = pe_ratio * price_to_book_value
 
+        # ROE
+        return_on_equity = 100 * eps / book_value
+        statistics["roe[%]"] = return_on_equity
+
         # price_to_operating_cf_ratio
         statistics["pocf_ratio"] = stock_price / statistics["operating_cfps"]
 
@@ -134,15 +138,25 @@ class Ticker:
         self._calculate_quick_filter()
 
     def _calculate_quick_filter(self):
+
+        # Check the health of the company:
+        # - this automatic condition is way more restrictive than the overvalution one
         passed = self.statistics["eps"] > 0 and \
                  self.statistics["book_value"] > 0 and \
-                 self.statistics["pe*bv"] < 65 and \
+                 self.statistics["debt_to_equity"] < 3.2 and \
                  self.statistics["earnings_yearly_trend"] > 0 and \
                  self.statistics["equity_yearly_trend"] > 0 and \
                  self.statistics["operating_cf_yearly_trend"] > 0 and \
                  self.statistics["non_operating_cf_yearly_trend"] < 0 and \
                  self.statistics["maximal_non_operating_cf"] < 0 and \
                  self.statistics["minimal_operating_cf"] > 0
+
+        # And then we can check if it isn't overvalued:
+        # - we don't want to be too restrictive here, only to turn the manual search in the excel easier
+        passed = passed and \
+                 self.statistics["pe*bv"] < 100 and \
+                 self.statistics["naive_time_to_profit"] < 30
+        #        ^ we can play with those rules until we find a good filter
         self.statistics["quick_filter"] = passed
 
     def __init__(self, symbol, market):
@@ -163,6 +177,7 @@ class Ticker:
             "pe_ratio": None,
             "ep_ratio[%]": None,
             "pe*bv": None,
+            "roe[%]": None,
             "operating_cfps": None,
             "non_operating_cfps": None,
             "pocf_ratio": None,
