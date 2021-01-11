@@ -96,68 +96,88 @@ class Ticker:
         # market cap
         statistics["market_cap"] = stock_price * shares_outstanding
 
-        # dividends
-        dividends = last_yearly_cash_flow["Common Stock Dividends Paid"] / shares_outstanding
+        # dividends. Negate the "Common Stock Dividends Paid" field since it indicates lost money for the company
+        dividends = (-last_yearly_cash_flow["Common Stock Dividends Paid"]) / shares_outstanding
         statistics["dividends"] = dividends
 
         # naive time to profit
         statistics["naive_time_to_profit"] = (stock_price - book_value) / eps
 
-        # earnings_trend
-        #   - fetching only 4 years, so I use all of them
-        #   - not the same as eps in the case of a change in the shares number
-        #   - maybe save the trend also in percentages?
+        self._calculate_trends(all_yearly_income_statements,
+                               all_yearly_balance_sheets,
+                               all_yearly_cash_flows)
+        self._calculate_quick_filter()
+    
+    def _calculate_trends(self, all_yearly_income_statements,
+                          all_yearly_balance_sheets, all_yearly_cash_flows):
+        """ Calculate 1st order trends from the financial reports statements.
+        The trends are:
+            - Net income trend
+            - Equity trend
+            - Operating cash flow (earned money by company's oprations)
+            - Non operating cash flow (investing + financing activities)
+        The function also calculates the min/max of some of these fields
+
+        @all_yearly_income_statements   - the 'Income Statement' reports for all
+                                          years
+        @all_yearly_balance_sheets      - the 'Balance Sheet' reports for all years
+        @all_yearly_cash_flows          - the 'Cash flow' statements for all years
+        """
+
+        statistics = self.statistics
+
+        # earnings trend (total, not per-stock)
         yearly_earnings = [statement["Net Income"] for statement in all_yearly_income_statements]
         poly_fit = Polynomial.fit(range(len(yearly_earnings)), yearly_earnings, deg=1)
         earnings_fit = poly_fit.convert().coef
         statistics["earnings_yearly_trend"] = earnings_fit[1]  # keep the slope
 
-        # equity_trend  (not book_value)
+        # equity_trend (total, not per-stock)
         yearly_equity = [sheet["Total Equity"] for sheet in all_yearly_balance_sheets]
         poly_fit = Polynomial.fit(range(len(yearly_equity)), yearly_equity, deg=1)
         equity_fit = poly_fit.convert().coef
         statistics["equity_yearly_trend"] = equity_fit[1]  # keep the slope
 
-        # operating_cash_flow_trend
+        # operating cash flow trend
         yearly_operating_cash_flow = np.array([flow["Cash Flow from Operating Activities"] for flow in all_yearly_cash_flows])
         poly_fit = Polynomial.fit(range(len(yearly_operating_cash_flow)), yearly_operating_cash_flow, deg=1)
         operating_cf_fit = poly_fit.convert().coef
         statistics["operating_cf_yearly_trend"] = operating_cf_fit[1]  # keep the slope
-        # minimal_operating_cf
+
+        # minimal operating cf
         statistics["minimal_operating_cf"] = np.min(yearly_operating_cash_flow)
 
-        # non_operating_cash_flow_trend
+        # non operating cash flow trend
         yearly_total_cash_flow = np.array([flow["Change in Cash"] for flow in all_yearly_cash_flows])
         yearly_non_operating_cash_flow = yearly_total_cash_flow - yearly_operating_cash_flow
         poly_fit = Polynomial.fit(range(len(yearly_non_operating_cash_flow)), yearly_non_operating_cash_flow, deg=1)
         non_operating_cf_fit = poly_fit.convert().coef
         statistics["non_operating_cf_yearly_trend"] = non_operating_cf_fit[1]  # keep the slope
-        # maximal_non_operating_cf
-        statistics["maximal_non_operating_cf"] = np.min(yearly_non_operating_cash_flow)
 
-        self._calculate_quick_filter()
+        # maximal non operating cf
+        statistics["maximal_non_operating_cf"] = np.max(yearly_non_operating_cash_flow)
 
     def _calculate_quick_filter(self):
+        """ The function checks several conditions which determine if its a
+        ticker we're might be interested in. The conditions are split into two
+        categories:
+            - former: general health parameters which are more restrictive and
+              are enough to remove the ticker from buying considerations
+            - latter: parameters which might be changed later but might be an
+              indication for overvalued companies"""
 
-        # Check the health of the company:
-        # - this automatic condition is way more restrictive than the overvalution one
-        passed = self.statistics["eps"] > 0 and \
-                 self.statistics["book_value"] > 0 and \
-                 self.statistics["debt_to_equity"] < 3.2 and \
-                 self.statistics["earnings_yearly_trend"] > 0 and \
-                 self.statistics["equity_yearly_trend"] > 0 and \
-                 self.statistics["operating_cf_yearly_trend"] > 0 and \
-                 self.statistics["non_operating_cf_yearly_trend"] < 0 and \
-                 self.statistics["maximal_non_operating_cf"] < 0 and \
-                 self.statistics["minimal_operating_cf"] > 0
+        self.statistics["healthy"] = self.statistics["eps"] > 0 and \
+                                self.statistics["book_value"] > 0 and \
+                                self.statistics["debt_to_equity"] < 3.2 and \
+                                self.statistics["earnings_yearly_trend"] > 0 and \
+                                self.statistics["equity_yearly_trend"] > 0 and \
+                                self.statistics["operating_cf_yearly_trend"] > 0 and \
+                                self.statistics["non_operating_cf_yearly_trend"] < 0 and \
+                                self.statistics["maximal_non_operating_cf"] < 0 and \
+                                self.statistics["minimal_operating_cf"] > 0
 
-        # And then we can check if it isn't overvalued:
-        # - we don't want to be too restrictive here, only to turn the manual search in the excel easier
-        passed = passed and \
-                 self.statistics["pe*bv"] < 100 and \
-                 self.statistics["naive_time_to_profit"] < 30
-        #        ^ we can play with those rules until we find a good filter
-        self.statistics["quick_filter"] = passed
+        self.statistics["overvalued"] = self.statistics["pe*bv"] >= 100 or \
+                                self.statistics["naive_time_to_profit"] >= 30
 
     def __init__(self, symbol, market):
 
@@ -197,11 +217,10 @@ class Ticker:
 
             # fetched attributes
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
+            "healthy": None,
+            "overvalued": None,
             "sector": self.yahoo_info.info["sector"],
             "industry": self.yahoo_info.info["industry"],
-
-            # quick_filter:
-            "quick_filter": None,
             }
 
         self.__calculate_stats()
