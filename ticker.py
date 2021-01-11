@@ -250,6 +250,3 @@ class Ticker:
                 ax.xaxis.set_major_formatter(formatter)
                 ax.plot_date(times, values, '-')
         plt.show()
-
-#msft = Ticker("nvda", "nasdaq")
-#msft.plot_me()
