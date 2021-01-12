@@ -37,6 +37,12 @@ class YahooInfo:
         # Date                                                                                    
         # 2018-03-14  91.601436  91.88071  90.041359  90.378410  32132000          0             0
         stocks_data = self.yf_symbol.history(start = date, end = next_date)
+
+        # to stock data at date. Cache and return 'NaN'
+        if not len(stocks_data):
+            self.stock_prices[date_str] = float('NaN')
+            return float('NaN')
+
         for entry in range(len(stocks_data)):
             stock = stocks_data.iloc[entry]
             stock_date  = stock.name.strftime("%Y-%m-%d")
