@@ -60,12 +60,23 @@ def store_process_value(term_dict, key, str_value):
         m = re.match(r"(?P<month>\d+)/(?P<day>\d+)/(?P<year>\d+)", str_value)
         term_dict[key] = { key: int(value) for key, value in m.groupdict().items()}
     elif str_value == "-":
-        term_dict[key] = 'NaN'
+        term_dict[key] = float('NaN')
     else:
         value = float(str_value.replace(',', ''))
         value = value * 10**6
         term_dict[key] = value
 
+def get_number_of_fields(document, searched_field):
+    """ Get an htmlDom object and count how many instances of a tag exist in it
+    @document: the document to search in
+    @searched_field: the field to search
+    """
+
+    num = 0
+    while document.find(searched_field)[num + 1]:
+        num += 1
+
+    return num
 
 # TODO: catch specific exceptions and not just assume what they are
 class Reports:
@@ -84,8 +95,13 @@ class Reports:
         term_dict = report_dict[term]
         report_fields = fields[report_name]
 
-        for i in range(num_of_fields[term]):
-            quarter_name = document.find("div.column-heading")[i+1].find("p").attr("title")
+        # year or quarter columns
+        periods_number = get_number_of_fields(document, "div.column-heading")
+
+        for i in range(periods_number):
+            columns = document.find("div.column-heading")[i + 1]
+            quarter_name = columns.find("p").attr("title")
+
             # initialize the quarter column
             term_dict[quarter_name] = dict()
             for key in report_fields:

@@ -228,7 +228,6 @@ class Ticker:
         last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
         balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
         stock_price = self.yahoo_info.get_stock_price_at_date(**balance_sheet_date)
-        print("stock price at last report: " + str(stock_price))
 
     def get_price_graph(self, term):
         dates = self.reports.get_reports_dates(term)
