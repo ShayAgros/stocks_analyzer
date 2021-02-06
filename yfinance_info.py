@@ -6,7 +6,16 @@ from os import makedirs, path
 import datetime
 
 yahoo_dir = "./yahoo_files"
-file_format="{symbol}-yahoo.json"
+file_format = "{symbol}-yahoo.json"
+
+market_to_yf_market = {
+        "NASDAQ"    : None,  # None value will leave the symbol intact
+        "NYSE"      : None,
+        "TPE"       : "TW",  # Taiwan
+        "TYO"       : "T",   # Japan
+        "LON"       : "L",   # UK
+        "TLV"       : "TA"   # Israel
+    }
 
 
 def get_seconds_from_now(filename):
@@ -16,11 +25,17 @@ def get_seconds_from_now(filename):
 
 class YahooInfo:
 
+    def translate_price(self, value):
+        """ In Israel, convert from agura to shekel, as in the reports """
+        if self.market_endian == "TA":
+            return value / 100
+        return value
+
     def get_stock_price_now(self):
         """Get the current stock price, or, if the market is closed, the closing price,
         without caching, as the price continue to change"""
         todays_data = self.yf_symbol.history(period='1d')
-        return todays_data['Close'][0]
+        return self.translate_price(todays_data['Close'][0])
 
     def get_stock_price_at_date(self, day, month, year):
         """Get the stock price at the given date, or the closet after it if the
@@ -31,7 +46,7 @@ class YahooInfo:
         # the format in the cache file
         date_str = "{year}-{month}-{day}".format(day=str(day).zfill(2), month=str(month).zfill(2), year=year)
         if date_str in self.stock_prices:
-            return self.stock_prices[date_str]
+            return self.translate_price(self.stock_prices[date_str])
 
         # We never fetched the stock for this date, we fetch the stock price
         # from a day *after* the requested one because yahoo data (for some
@@ -69,7 +84,7 @@ class YahooInfo:
 
         # return the first value in the table which is the closest stock price
         # to the requested date
-        return stocks_data.iloc[0]["Close"]
+        return self.translate_price(stocks_data.iloc[0]["Close"])
 
     def get_stock_price_in_range(self, from_date, to_date):
         # in case any date isnt cached, fetch the entire date range and cache
@@ -80,11 +95,17 @@ class YahooInfo:
                                              end=to_date + datetime.timedelta(days=1))
         times = stocks_data.index
         prices = stocks_data['Close']
-        return times, prices
+        return times, self.translate_price(prices)
 
-    def __init__(self, symbol):
+    def __init__(self, symbol, market):
 
-        self.symbol = symbol
+        if market not in market_to_yf_market.keys():
+            raise Exception("unrecognised market")
+        self.market_endian = market_to_yf_market[market]
+        if self.market_endian is not None:
+            self.symbol = symbol + "." + self.market_endian
+        else:
+            self.symbol = symbol
 
         file_name = file_format.format(symbol = self.symbol)
         file_path = path.join(yahoo_dir, file_name)

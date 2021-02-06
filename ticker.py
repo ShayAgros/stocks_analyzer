@@ -184,7 +184,7 @@ class Ticker:
         self.symbol = symbol.upper()
         self.market = market.upper()
 
-        self.yahoo_info = YahooInfo(self.symbol)
+        self.yahoo_info = YahooInfo(self.symbol, market)
 
         # This would throw an exception if it fails
         self.reports = Reports(self.symbol, self.market)

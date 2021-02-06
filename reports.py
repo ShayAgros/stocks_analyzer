@@ -10,13 +10,25 @@ import time
 import re
 import datetime
 
-site_format = "https://www.msn.com/en-us/money/stockdetailsvnext/financials/{report_name}/{term}/fi-126.1.{symbol}.{market}"
+site_format_init = "https://www.msn.com/en-us/money/stockdetailsvnext/financials"
+site_format_dict = {
+    "NAS": site_format_init + "/{report_name}/{term}/fi-126.1.{symbol}.{market}",
+    "NYS": site_format_init + "/{report_name}/{term}/fi-126.1.{symbol}.{market}",
+    "TAI": site_format_init + "/{report_name}/{term}/fi-144.1.{symbol}.{market}",
+    "TKS": site_format_init + "/{report_name}/{term}/fi-133.1.{symbol}.{market}",
+    "LON": site_format_init + "/{report_name}/{term}/fi-151.1.{symbol}.{market}",
+    "TAE": site_format_init + "/{report_name}/{term}/fi-292.1.IS-{symbol}.{market}.{symbol}",
+}
 report_dir = "./msn_reports"
-file_format="{symbol}-{market}-{report_name}-{term}.html"
+file_format = "{symbol}-{market}-{report_name}-{term}.html"
 
 market_to_msn_market = {
         "NASDAQ"    : "NAS",
-        "NYSE"      : "NYS"
+        "NYSE"      : "NYS",
+        "TPE"       : "TAI",  # Taiwan
+        "TYO"       : "TKS",  # Japan
+        "LON"       : "LON",  # UK
+        "TLV"       : "TAE"   # Israel
     }
 
 num_of_fields = {
@@ -125,7 +137,7 @@ class Reports:
         site_file_name = file_format.format(symbol = self.symbol, market = self.market, report_name = report_name, term = term)
         site_path = path.join(report_dir, site_file_name) 
 
-        site_url = site_format.format(report_name = report_name, term=term, symbol=self.symbol, market=self.msn_market)
+        site_url = site_format_dict[self.msn_market].format(report_name = report_name, term=term, symbol=self.symbol, market=self.msn_market)
 
         # Didn't parse it yet. Fetch from the web
         if not path.isfile(site_path):
