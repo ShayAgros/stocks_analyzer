@@ -313,4 +313,3 @@ class Ticker:
         print("")
         print("old_yearly_pe_ratio:    " + str(old_yearly_pe_ratio))
         print("old_quarterly_pe_ratio: " + str(old_quarterly_pe_ratio))
-
