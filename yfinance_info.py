@@ -13,7 +13,14 @@ def get_seconds_from_now(filename):
     sec_from_epoch = path.getmtime(filename)
     return datetime.datetime.now().timestamp() - sec_from_epoch
 
+
 class YahooInfo:
+
+    def get_stock_price_now(self):
+        """Get the current stock price, or, if the market is closed, the closing price,
+        without caching, as the price continue to change"""
+        todays_data = self.yf_symbol.history(period='1d')
+        return todays_data['Close'][0]
 
     def get_stock_price_at_date(self, day, month, year):
         """Get the stock price at the given date, or the closet after it if the

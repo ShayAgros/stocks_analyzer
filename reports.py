@@ -38,7 +38,8 @@ fields = {
     "income_statement": [
         "Period End Date",
         "Net Income",
-        "Total Revenue"
+        "Total Revenue",
+        "Diluted Weighted Average Shares"
     ],
     "cash_flow": [
         "Period End Date",

@@ -32,8 +32,8 @@ class Ticker:
 
         # calculate eps
         earnings = last_yearly_income_statement["Net Income"]
-        shares_outstanding = last_yearly_balance_sheet["Ordinary Shares Outstanding"]
-        statistics["eps"] = earnings / shares_outstanding
+        shares_outstanding = last_yearly_income_statement["Diluted Weighted Average Shares"]  # Diluted eps
+        statistics["eps"] = earnings / shares_outstanding  # assuming no preferred dividends
 
         # operating cash-flow per share
         operating_cash_flow = last_yearly_cash_flow["Cash Flow from Operating Activities"]
@@ -46,7 +46,7 @@ class Ticker:
 
         # book value
         total_equity = last_quarterly_balance_sheet["Total Equity"]
-        shares_outstanding = last_quarterly_balance_sheet["Ordinary Shares Outstanding"]
+        shares_outstanding = last_quarterly_income_statement["Diluted Weighted Average Shares"]  # Diluted eps
         statistics["book_value"] = total_equity / shares_outstanding
 
         # price to book
@@ -268,3 +268,49 @@ class Ticker:
                 ax.xaxis.set_major_formatter(formatter)
                 ax.plot_date(times, values, '-')
         plt.show()
+
+    def get_current_pe(self):
+        """
+        Since the pe ratio in the statistics was calculated for the time of the last yearly report
+        this function calculate the pe ratio according to the current price as a quick replacement for the websites
+        and not as a screening parameter
+
+        right now we generate multiple versions of this ratio, for experimenting with them
+        e.g.:   Ticker('MSFT', 'NASDAQ').get_current_pe()
+        """
+
+        # calculate the diluted eps per quarter:
+        last_quarterly_income_statement = self.reports.get_last_report("quarterly", "income_statement")
+        last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
+        shares_outstanding = last_quarterly_income_statement["Diluted Weighted Average Shares"]
+        earnings = 4 * last_quarterly_income_statement["Net Income"]
+        quarterly_eps = earnings / shares_outstanding
+
+        yearly_eps = self.statistics["eps"]
+
+        # find the prices, now, at the quarter & at the year:
+
+        # Quarter:
+        balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
+        quarterly_price = self.yahoo_info.get_stock_price_at_date(**balance_sheet_date)
+
+        # Year:
+        last_yearly_balance_sheet = self.reports.get_last_report("annual", "balance_sheet")
+        balance_sheet_date = last_yearly_balance_sheet["Period End Date"]
+        yearly_price = self.yahoo_info.get_stock_price_at_date(**balance_sheet_date)
+
+        # Now:
+        real_price = self.yahoo_info.get_stock_price_now()
+
+        # and finally, the pe ratios:
+        yearly_pe_ratio        = real_price / yearly_eps
+        quarterly_pe_ratio     = real_price / quarterly_eps
+        old_yearly_pe_ratio    = yearly_price / yearly_eps
+        old_quarterly_pe_ratio = quarterly_price / quarterly_eps
+
+        print("yearly_pe_ratio:        " + str(yearly_pe_ratio))
+        print("quarterly_pe_ratio:     " + str(quarterly_pe_ratio))
+        print("")
+        print("old_yearly_pe_ratio:    " + str(old_yearly_pe_ratio))
+        print("old_quarterly_pe_ratio: " + str(old_quarterly_pe_ratio))
+
