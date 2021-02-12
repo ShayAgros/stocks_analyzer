@@ -19,6 +19,7 @@ site_format_dict = {
     "LON": site_format_init + "/{report_name}/{term}/fi-151.1.{symbol}.{market}",
     "TAE": site_format_init + "/{report_name}/{term}/fi-292.1.IS-{symbol}.{market}.{symbol}",
 }
+site_for_ticker_with_dot = site_format_init + "/{report_name}/{term}/fi-126.1.{tempered_symbol}.{market}.{symbol}"
 report_dir = "./msn_reports"
 file_format = "{symbol}-{market}-{report_name}-{term}.html"
 
@@ -40,18 +41,21 @@ fields = {
         "Period End Date",
         "Total Current Assets",
         "Total Assets",
-        "Total Current Liabilities" ,
+        "Total Current Liabilities",
         "Total Liabilities",
         "Current Debt",
         "Long Term Debt",
         "Total Equity",
-        "Ordinary Shares Outstanding"
+        "Goodwill and Other Intangible Assets",
+        "Ordinary Shares Outstanding",
+        "Currency Code"
     ],
     "income_statement": [
         "Period End Date",
         "Net Income",
         "Total Revenue",
-        "Diluted Weighted Average Shares"
+        "Diluted Weighted Average Shares",
+        "Dividend Per Share"
     ],
     "cash_flow": [
         "Period End Date",
@@ -60,7 +64,8 @@ fields = {
         "Cash Flow from Financing Activities",
         "Change in Cash",                       # Im using this field minus the operating as a more stable replacement
                                                 # to the sum of investing + financing
-        "Common Stock Dividends Paid"
+        "Common Stock Dividends Paid",
+        "Purchase/Sale of Prop,Plant,Equip: Net"  # Capital Expenditures
     ]
 }
 
@@ -72,6 +77,8 @@ def store_process_value(term_dict, key, str_value):
     if key == "Period End Date":
         m = re.match(r"(?P<month>\d+)/(?P<day>\d+)/(?P<year>\d+)", str_value)
         term_dict[key] = { key: int(value) for key, value in m.groupdict().items()}
+    elif key in ("Currency Code",):
+        term_dict[key] = str_value
     elif str_value == "-":
         term_dict[key] = float('NaN')
     else:
@@ -130,6 +137,9 @@ class Reports:
         response = requests.request("GET", site_url)
         time.sleep(0.5)
 
+        if len(response.text) < 70:
+            print("sute url: " + site_url)
+            raise Exception("MSN Server Error")
         with open(site_file, "w") as f:
             f.write(response.text)
 
@@ -137,7 +147,11 @@ class Reports:
         site_file_name = file_format.format(symbol = self.symbol, market = self.market, report_name = report_name, term = term)
         site_path = path.join(report_dir, site_file_name) 
 
-        site_url = site_format_dict[self.msn_market].format(report_name = report_name, term=term, symbol=self.symbol, market=self.msn_market)
+        if "." in self.symbol:
+            site_symbol = self.symbol.replace(".", "%7CSLA%7C")
+            site_url = site_for_ticker_with_dot.format(report_name = report_name, term=term, symbol=self.symbol, market=self.msn_market, tempered_symbol=site_symbol)
+        else:
+            site_url = site_format_dict[self.msn_market].format(report_name = report_name, term=term, symbol=self.symbol, market=self.msn_market)
 
         # Didn't parse it yet. Fetch from the web
         if not path.isfile(site_path):

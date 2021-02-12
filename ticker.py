@@ -190,7 +190,9 @@ class Ticker:
         self.reports = Reports(self.symbol, self.market)
 
         self.statistics = {
-            # calculated attributes (the order here is the order in the csv)
+            # the order here is the order in the csv
+            "name": self.yahoo_info.info["shortName"],
+
             "eps": None,
             "book_value": None,
             "price_to_book": None,
@@ -215,7 +217,6 @@ class Ticker:
             "non_operating_cf_yearly_trend": None,
             "dividends": None,
 
-            # fetched attributes
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
             "healthy": None,
             "overvalued": None,

@@ -98,7 +98,7 @@ class YahooInfo:
         return times, self.translate_price(prices)
 
     def __init__(self, symbol, market):
-
+        symbol = symbol.replace('.', '-')  # for tickers like "brk.b"
         if market not in market_to_yf_market.keys():
             raise Exception("unrecognised market")
         self.market_endian = market_to_yf_market[market]
