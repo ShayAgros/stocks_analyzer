@@ -132,6 +132,15 @@ class Ticker:
         earnings_fit = poly_fit.convert().coef
         statistics["earnings_yearly_trend"] = earnings_fit[1]  # keep the slope
 
+        # earnings growth (exponential)
+        earnings_ln = np.log(yearly_earnings)
+        poly_fit = Polynomial.fit(range(len(earnings_ln)), earnings_ln, deg=1)
+        earnings_ln_fit = poly_fit.convert().coef
+        growth_rate = (np.exp(earnings_ln_fit[1]) - 1) * 100
+
+        # peg ratio
+        statistics["peg_ratio"] = statistics["pe_ratio"] / growth_rate
+
         # equity_trend (total, not per-stock)
         yearly_equity = [sheet["Total Equity"] for sheet in all_yearly_balance_sheets]
         poly_fit = Polynomial.fit(range(len(yearly_equity)), yearly_equity, deg=1)
@@ -174,7 +183,8 @@ class Ticker:
                                 self.statistics["operating_cf_yearly_trend"] > 0 and \
                                 self.statistics["non_operating_cf_yearly_trend"] < 0 and \
                                 self.statistics["maximal_non_operating_cf"] < 0 and \
-                                self.statistics["minimal_operating_cf"] > 0
+                                self.statistics["minimal_operating_cf"] > 0 and \
+                                self.statistics["roe[%]"] >= 10
 
         self.statistics["overvalued"] = self.statistics["pe*bv"] >= 100 or \
                                 self.statistics["naive_time_to_profit"] >= 30
@@ -200,6 +210,7 @@ class Ticker:
             "ep_ratio[%]": None,
             "pe*bv": None,
             "roe[%]": None,
+            "peg_ratio": None,
             "operating_cfps": None,
             "non_operating_cfps": None,
             "pocf_ratio": None,
