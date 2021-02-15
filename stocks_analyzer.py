@@ -63,20 +63,39 @@ def filter_stocks_by_fields(ticker, fields):
     return passes
 
 
-def extract_statistics(ticker, show_fields):
-    return ticker.statistics  # todo: implement, remove ignored fields, only minor importance
+def extract_statistics(ticker):
+    return ticker.statistics
 
 
-# TODO: This would output a csv file containing the statistics for each of the tickers
-def stocks_list_to_csv(tickers_list, out_path, show_fields=None, max_count=None):
+# This would output a csv file containing the statistics for each of the tickers
+def stocks_list_to_csv(tickers_list, out_path, show_fields=None, max_count=None, ignore_fields=None):
     if max_count and max_count < len(tickers_list):
         tickers_list = tickers_list[:max_count]
-    # as dictionary:
-    d = {(ticker.symbol): extract_statistics(ticker, show_fields).values() for ticker in tickers_list}
-    # ---- As Dataframe: ----  todo: handle the empty list case
-    df = pd.DataFrame.from_dict(d, orient='index', columns=tickers_list[0].statistics.keys())
-    print(df)
+    if len(tickers_list) == 0:
+        print("No Tickers To Save. ignored.")
+        return
 
+    # as dictionary:
+    d = {(ticker.symbol): extract_statistics(ticker).values() for ticker in tickers_list}
+    # ---- As Dataframe: ----
+    df = pd.DataFrame.from_dict(d, orient='index', columns=tickers_list[0].statistics.keys())
+
+    if show_fields is not None:
+        df = df[show_fields]
+    if ignore_fields is not None:
+        df = df.drop(ignore_fields)
+
+    # print summary to the terminal
+    pd.set_option('max_colwidth', 20)
+    titles = ["name", "pe_ratio", "healthy", "overvalued", "industry"]
+    if show_fields is not None:
+        titles = [field for field in titles if field in show_fields]
+    if ignore_fields is not None:
+        titles = [field for field in titles if field not in ignore_fields]
+    print(df[titles])
+    pd.reset_option('max_colwidth')
+
+    # save to file
     df.to_csv(out_path)
 
 def create_tickers_from_file(file_path):
