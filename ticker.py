@@ -9,9 +9,6 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 
-# TODO: the yahoo API doesn't allow to specify market easily,
-# so currently we just ignore it. Maybe we should switch to some
-# more robust service
 class Ticker:
 
     def __calculate_stats(self):
@@ -44,10 +41,31 @@ class Ticker:
         non_operating_cash_flow = total_cash_flow - operating_cash_flow
         statistics["non_operating_cfps"] = operating_cash_flow / shares_outstanding
 
+        # owners earnings
+        owners_earnings = operating_cash_flow - last_yearly_cash_flow["Purchase/Sale of Prop,Plant,Equip: Net"]
+        statistics["owners_earnings"] = owners_earnings / shares_outstanding
+
         # book value
         total_equity = last_quarterly_balance_sheet["Total Equity"]
-        shares_outstanding = last_quarterly_income_statement["Diluted Weighted Average Shares"]  # Diluted eps
+        shares_outstanding = last_quarterly_income_statement["Diluted Weighted Average Shares"]  # Diluted
         statistics["book_value"] = total_equity / shares_outstanding
+
+        # dividends. Negate the "Common Stock Dividends Paid" field since it indicates lost money for the company
+        # take the non-diluted number of shares since only real stocks receives dividends
+        dividends = (-last_yearly_cash_flow["Common Stock Dividends Paid"]) / last_yearly_balance_sheet["Ordinary Shares Outstanding"]
+        statistics["dividends"] = dividends
+
+        # delta_book_value
+        yearly_total_equity = all_yearly_balance_sheets[-2]["Total Equity"]
+        yearly_shares_outstanding = all_yearly_income_statements[-2]["Diluted Weighted Average Shares"]
+        old_bv = yearly_total_equity / yearly_shares_outstanding
+        yearly_total_equity = all_yearly_balance_sheets[-1]["Total Equity"]
+        yearly_shares_outstanding = all_yearly_income_statements[-1]["Diluted Weighted Average Shares"]
+        new_bv = yearly_total_equity / yearly_shares_outstanding
+        delta_book_value = new_bv - old_bv
+
+        # actual owners earnings
+        statistics["actual_earnings"] = delta_book_value + dividends
 
         # price to book
         balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
@@ -94,11 +112,7 @@ class Ticker:
         statistics["debt_to_equity"] = total_debt / total_equity
 
         # market cap
-        statistics["market_cap"] = stock_price * shares_outstanding
-
-        # dividends. Negate the "Common Stock Dividends Paid" field since it indicates lost money for the company
-        dividends = (-last_yearly_cash_flow["Common Stock Dividends Paid"]) / shares_outstanding
-        statistics["dividends"] = dividends
+        statistics["market_cap"] = stock_price * shares_outstanding  # take the most updated number (quarterly)
 
         # naive time to profit
         statistics["naive_time_to_profit"] = (stock_price - book_value) / eps
@@ -227,6 +241,8 @@ class Ticker:
             "operating_cf_yearly_trend": None,
             "non_operating_cf_yearly_trend": None,
             "dividends": None,
+            "owners_earnings": None,
+            "actual_earnings": None,
 
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
             "healthy": None,
@@ -249,7 +265,6 @@ class Ticker:
         return date_vector, price_vector
 
     def plot_me(self):
-        # todo: change to bv & eps as a better representation of the stock value
         plot_fields = (("income_statement", "Net Income"), ("balance_sheet", "Total Equity"))
         plot_terms = ("annual", "quarterly")
 

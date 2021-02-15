@@ -54,14 +54,13 @@ fields = {
         "Period End Date",
         "Net Income",
         "Total Revenue",
-        "Diluted Weighted Average Shares",
-        "Dividend Per Share"
+        "Diluted Weighted Average Shares"
     ],
     "cash_flow": [
         "Period End Date",
         "Cash Flow from Operating Activities",
-        "Cash Flow from Investing Activities",  # Warnning! in msft this field is '-', but the graph is still viewable
-        "Cash Flow from Financing Activities",
+        # "Cash Flow from Investing Activities",  # Warnning! in msft this field is '-', but the graph is still viewable
+        # "Cash Flow from Financing Activities",
         "Change in Cash",                       # Im using this field minus the operating as a more stable replacement
                                                 # to the sum of investing + financing
         "Common Stock Dividends Paid",
