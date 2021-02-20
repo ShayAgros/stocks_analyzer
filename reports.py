@@ -186,6 +186,9 @@ class Reports:
         dates = [datetime.datetime(date["year"], date["month"], date["day"]) for date in dates]
         return dates
 
+    def get_field_as_list(self, report, term, field):
+        return [r[field] for r in self.get_reports_ascending(term, report)]
+
     def get_ttm(self, report: str) -> dict:
         """ get the trailing twelve months of data (or less if quarters are missing in the reports) """
         result = dict()

@@ -13,8 +13,6 @@ class Ticker:
 
     def __calculate_stats(self):
         statistics = self.statistics
-        approximate_bond_10 = 0.95 * 0.01  # updated @ 19.12.2020
-        approximate_bond_30 = 1.7  * 0.01  # updated @ 19.12.2020
         all_yearly_income_statements = self.reports.get_reports_ascending("annual", "income_statement")
         all_yearly_balance_sheets = self.reports.get_reports_ascending("annual", "balance_sheet")
         all_yearly_cash_flows = self.reports.get_reports_ascending("annual", "cash_flow")
@@ -92,16 +90,6 @@ class Ticker:
         # price_to_operating_cf_ratio
         statistics["pocf_ratio"] = stock_price / statistics["operating_cfps"]
 
-        # basic_discount_value - todo: check my formula
-        #   current book_value plus the summary of the discounted eps till the end of time
-        #   assumes fixed eps and a rather arbitrary bond yield rate
-        approximate_bond = approximate_bond_30
-        statistics["basic_discount_value"] = book_value + eps*((1+approximate_bond)/approximate_bond)
-
-        # basic_discount_ratio
-        discount_value = statistics["basic_discount_value"]
-        statistics["basic_discount_ratio"] = discount_value / stock_price
-
         # current_ratio
         current_assets = last_quarterly_balance_sheet["Total Current Assets"]
         current_liabilities = last_quarterly_balance_sheet["Total Current Liabilities"]
@@ -120,6 +108,11 @@ class Ticker:
         self._calculate_trends(all_yearly_income_statements,
                                all_yearly_balance_sheets,
                                all_yearly_cash_flows)
+        self._calculate_intrinsic_values(all_yearly_income_statements,
+                               all_yearly_balance_sheets,
+                               all_yearly_cash_flows,
+                               shares_outstanding,
+                               stock_price)
         self._calculate_quick_filter()
     
     def _calculate_trends(self, all_yearly_income_statements,
@@ -151,6 +144,7 @@ class Ticker:
         poly_fit = Polynomial.fit(range(len(earnings_ln)), earnings_ln, deg=1)
         earnings_ln_fit = poly_fit.convert().coef
         growth_rate = (np.exp(earnings_ln_fit[1]) - 1) * 100
+        statistics["growth_rate"] = growth_rate
 
         # peg ratio
         statistics["peg_ratio"] = statistics["pe_ratio"] / growth_rate
@@ -179,6 +173,57 @@ class Ticker:
 
         # maximal non operating cf
         statistics["maximal_non_operating_cf"] = np.max(yearly_non_operating_cash_flow)
+
+    @staticmethod
+    def __calculate_free_cash_flow(cashflow_statement):
+        # from online search, there are a few different ways of calculating free cash flow
+        #   until farther research, I provide the course definition as owners earnings
+        return cashflow_statement["Cash Flow from Operating Activities"] - \
+               cashflow_statement["Purchase/Sale of Prop,Plant,Equip: Net"]
+
+    def _calculate_intrinsic_values(self, all_yearly_income_statements,
+                          all_yearly_balance_sheets, all_yearly_cash_flows, diluted_shares, stock_price):
+        statistics = self.statistics
+        approximate_bond_10 = 0.95 * 0.01  # updated @ 19.12.2020
+        approximate_bond_30 = 1.7 * 0.01  # updated @ 19.12.2020
+
+        discount_rate = 10 * 0.01  # the wished return rate of an investment
+
+        # basic_discount_value - todo: check my formula
+        #   current book_value plus the summary of the discounted eps till the end of time
+        #   assumes fixed eps and a rather arbitrary bond yield rate
+        approximate_bond = approximate_bond_30
+        book_value = statistics["book_value"]
+        eps = statistics["eps"]
+        statistics["basic_discount_value"] = book_value + eps * ((1 + approximate_bond) / approximate_bond)
+
+        # The Discounted Free Cash Flow Model (according to the youtube course):
+        #   10 years of data are preffered, we use only 4
+        avarage__annual_free_cash_flow = np.mean([Ticker.__calculate_free_cash_flow(report) for report in all_yearly_cash_flows])
+        forcasted_short_term_growth_rate = statistics["growth_rate"] / 100  # in the video he used a simple root calculation
+        forecasted_number_years_of_growth = 10  # he recommends 10 years or less
+        forcasted_long_term_growth_rate = np.min([3 / 100, forcasted_short_term_growth_rate])  # recommends 3% or lower
+
+        # we calculate the q of the geometric series
+        short_term_q = forcasted_short_term_growth_rate / (1 + discount_rate)
+        long_term_q  = forcasted_long_term_growth_rate  / (1 + discount_rate)
+
+        # sum over the short term
+        sum_discounted_fcf_short_term = avarage__annual_free_cash_flow * \
+                                               (short_term_q - short_term_q ** (forecasted_number_years_of_growth+1)) /\
+                                               (1 - short_term_q)
+        # and from its ending to eternity
+        sum_discounted_fcf_long_term = (avarage__annual_free_cash_flow * long_term_q
+                                        * short_term_q ** forecasted_number_years_of_growth) / \
+                                       (1 - long_term_q)
+
+        intrinsic_value_dcf = (sum_discounted_fcf_short_term + sum_discounted_fcf_long_term) / diluted_shares  # + book_value ?
+        statistics["intrinsic_value_dcf"] = intrinsic_value_dcf
+
+        # basic_discount_ratio
+        discount_value = statistics["basic_discount_value"]
+        statistics["basic_discount_ratio"] = discount_value / stock_price
+
 
     def _calculate_quick_filter(self):
         """ The function checks several conditions which determine if its a
@@ -230,6 +275,7 @@ class Ticker:
             "pocf_ratio": None,
             "basic_discount_value": None,
             "basic_discount_ratio": None,
+            "intrinsic_value_dcf": None,
             "current_ratio": None,
             "debt_to_equity": None,
             "market_cap": None,
@@ -240,6 +286,7 @@ class Ticker:
             "equity_yearly_trend": None,
             "operating_cf_yearly_trend": None,
             "non_operating_cf_yearly_trend": None,
+            "growth_rate": None,
             "dividends": None,
             "owners_earnings": None,
             "actual_earnings": None,
