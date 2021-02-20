@@ -68,6 +68,12 @@ fields = {
     ]
 }
 
+# when calculating TTM, those fields should take the last quarter value, and not the sum of the 4
+non_additive_fields = [
+    *fields["balance_sheet"],  # includes "Period End Date" for all of the reports
+    "Diluted Weighted Average Shares"
+]
+
 
 def store_process_value(term_dict, key, str_value):
     """Receive a value parsed from the html of a form, and store
@@ -179,6 +185,25 @@ class Reports:
         dates = [report["Period End Date"] for report in reports_ordered]
         dates = [datetime.datetime(date["year"], date["month"], date["day"]) for date in dates]
         return dates
+
+    def get_ttm(self, report: str) -> dict:
+        """ get the trailing twelve months of data (or less if quarters are missing in the reports) """
+        result = dict()
+        reports = self.get_reports_ascending("quarterly", report)
+        num_of_quarters = len(reports)
+        if num_of_quarters > 4:
+            reports = reports[-4:]
+            num_of_quarters = 4
+        if num_of_quarters < 4:
+            print("unreliable TTM for %s, missing quarters" % self.symbol)
+
+        for field in fields[report]:
+            if field in non_additive_fields:
+                result[field] = reports[-1][field]
+            else:
+                # if we are missing reports, we still want the numbers to be annual-like
+                result[field] = sum([r[field] for r in reports]) * 4 / num_of_quarters
+        return result
 
     def __init__(self, symbol, market):
         self.symbol     = symbol
