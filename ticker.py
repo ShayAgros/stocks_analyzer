@@ -205,8 +205,8 @@ class Ticker:
         forcasted_long_term_growth_rate = np.min([3 / 100, forcasted_short_term_growth_rate])  # recommends 3% or lower
 
         # we calculate the q of the geometric series
-        short_term_q = forcasted_short_term_growth_rate / (1 + discount_rate)
-        long_term_q  = forcasted_long_term_growth_rate  / (1 + discount_rate)
+        short_term_q = (1 + forcasted_short_term_growth_rate) / (1 + discount_rate)
+        long_term_q  = (1 + forcasted_long_term_growth_rate)  / (1 + discount_rate)
 
         # sum over the short term
         sum_discounted_fcf_short_term = avarage__annual_free_cash_flow * \
