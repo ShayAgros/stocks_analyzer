@@ -178,7 +178,7 @@ class Ticker:
     def __calculate_free_cash_flow(cashflow_statement):
         # from online search, there are a few different ways of calculating free cash flow
         #   until farther research, I provide the course definition as owners earnings
-        return cashflow_statement["Cash Flow from Operating Activities"] - \
+        return cashflow_statement["Cash Flow from Operating Activities"] + \
                cashflow_statement["Purchase/Sale of Prop,Plant,Equip: Net"]
 
     def _calculate_intrinsic_values(self, all_yearly_income_statements,
@@ -213,9 +213,9 @@ class Ticker:
                                                (short_term_q - short_term_q ** (forecasted_number_years_of_growth+1)) /\
                                                (1 - short_term_q)
         # and from its ending to eternity
-        sum_discounted_fcf_long_term = (avarage__annual_free_cash_flow * long_term_q
-                                        * short_term_q ** forecasted_number_years_of_growth) / \
-                                       (1 - long_term_q)
+        sum_discounted_fcf_long_term = (avarage__annual_free_cash_flow
+                                        * short_term_q ** forecasted_number_years_of_growth) \
+                                        * long_term_q /(discount_rate - forcasted_long_term_growth_rate)
 
         intrinsic_value_dcf = (sum_discounted_fcf_short_term + sum_discounted_fcf_long_term) / diluted_shares  # + book_value ?
         statistics["intrinsic_value_dcf"] = intrinsic_value_dcf
