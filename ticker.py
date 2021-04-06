@@ -329,36 +329,88 @@ class Ticker:
         date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date)
         return date_vector, price_vector
 
+    def get_price_at_report_dates(self, term):
+        reports_ordered = self.reports.get_reports_ascending(term, 'balance_sheet')
+        dates = [report["Period End Date"] for report in reports_ordered]
+        prices = [self.yahoo_info.get_stock_price_at_date(date["day"], date["month"], date["year"]) for date in dates]
+        return prices
+
     def plot_me(self):
+        # todo add TTM?
         plot_fields = (("income_statement", "Net Income"), ("balance_sheet", "Total Equity"))
-        plot_terms = ("annual", "quarterly")
+        plot_terms = ("annual","annual")  # "quarterly")
 
         fig = plt.figure()
+        axs = fig.subplots(2, 2)  # , sharex=True)
         fig.set_tight_layout(True)
-        plt.title(self.symbol)
-        plt.box(on=None)
-        axs = fig.subplots(len(plot_fields)+1, len(plot_terms))
+        fig.suptitle(self.symbol)
 
-        for col, term in enumerate(plot_terms):
-            for row, field in enumerate([None, *plot_fields]):
-                ax = axs[row, col]
-                if row == 0:
-                    # price graph:
-                    # since this is the first graph, show the term in the title
-                    ax.set_title(term)
-                    times, values = self.get_price_graph(term)
-                else:
-                    # statistics graph:
-                    ax.set_title(field[1])
-                    plot_reports = self.reports.get_reports_ascending(term, field[0])
-                    values = [report[field[1]] for report in plot_reports]
-                    times = self.reports.get_reports_dates(term)
+        # 00 - Book Value
+        ax = axs[0, 0]
+        label = "book value"
+        equity = np.array(self.reports.get_field_as_list("balance_sheet", "annual", "Total Equity"))
+        quantity = np.array(self.reports.get_field_as_list("income_statement", "annual", "Diluted Weighted Average Shares"))
+        values = equity / quantity
+        times = self.reports.get_reports_dates("annual")
+        format_axis(ax)
+        ax.plot(times, values, '-', label=label)
+        ax.legend()
 
-                locator = mdates.AutoDateLocator(minticks=3, maxticks=7)
-                formatter = mdates.ConciseDateFormatter(locator)
-                ax.xaxis.set_major_locator(locator)
-                ax.xaxis.set_major_formatter(formatter)
-                ax.plot_date(times, values, '-')
+        # 01 - EPS
+        ax = axs[0, 1]
+        label = "eps"
+        earnings = np.array(self.reports.get_field_as_list("income_statement", "annual", "Net Income"))
+        values = earnings / quantity
+        format_axis(ax)
+        ax.plot(times, values, '-', label=label)
+        ax.legend()
+
+        # 10 - {Free, Operating} Cash Flow
+        ax = axs[1, 0]
+        format_axis(ax)
+        # label = ("operating", "free")
+        operating = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Cash Flow from Operating Activities"))
+        capex = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Purchase/Sale of Prop,Plant,Equip: Net"))
+        free_cf = operating + capex
+        print(earnings)
+        print(free_cf)
+        label_n_values = [["operating", operating], ["free", free_cf]]
+        for label, values in label_n_values:
+            ax.plot(times, values, '-', label=label)
+        ax.legend()
+
+        # 11 - price & intrinsic value
+        # IDK how to calculate the intrinsic value, so just price
+        ax = axs[1, 1]
+        format_axis(ax)
+        label = "price"
+        prices = np.array(self.get_price_at_report_dates('annual'))
+        ax.plot(times, prices, '-', label=label)
+        ax.legend()
+
+        # for col, term in enumerate(plot_terms):
+        #     for row, field in enumerate([None, *plot_fields]):
+        #         ax = axs[row, col]
+        #         if row == 0:
+        #             # price graph:
+        #             # since this is the first graph, show the term in the title
+        #             ax.set_title(term)
+        #             times, values = self.get_price_graph(term)
+        #
+        #         else:
+        #             # statistics graph:
+        #             ax.set_title(field[1])
+        #             plot_reports = self.reports.get_reports_ascending(term, field[0])
+        #             values = [report[field[1]] for report in plot_reports]
+        #             times = self.reports.get_reports_dates(term)
+        #
+        #         # locator = mdates.AutoDateLocator(minticks=3, maxticks=7)
+        #         # formatter = mdates.ConciseDateFormatter(locator)
+        #         # ax.xaxis.set_major_locator(locator)
+        #         # ax.xaxis.set_major_formatter(formatter)
+        #         format_axis(ax)
+        #
+        #         ax.plot(times, values, '-')
         plt.show()
 
     def get_current_pe(self):
@@ -405,3 +457,24 @@ class Ticker:
         print("")
         print("old_yearly_pe_ratio:    " + str(old_yearly_pe_ratio))
         print("old_quarterly_pe_ratio: " + str(old_quarterly_pe_ratio))
+
+
+
+def format_axis(ax):
+    years = mdates.YearLocator()  # every year
+    months = mdates.MonthLocator()  # every month
+    years_fmt = mdates.DateFormatter('%Y')
+
+    # format the ticks
+    ax.xaxis.set_major_locator(years)
+    ax.xaxis.set_major_formatter(years_fmt)
+    ax.xaxis.set_minor_locator(months)
+
+    # # round to nearest years.
+    # datemin = np.datetime64(data['date'][0], 'Y')
+    # datemax = np.datetime64(data['date'][-1], 'Y') + np.timedelta64(1, 'Y')
+    # ax.set_xlim(datemin, datemax)
+    #
+    # # rotates and right aligns the x labels, and moves the bottom of the
+    # # axes up to make room for them
+    # fig.autofmt_xdate()
