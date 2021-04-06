@@ -372,8 +372,6 @@ class Ticker:
         operating = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Cash Flow from Operating Activities"))
         capex = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Purchase/Sale of Prop,Plant,Equip: Net"))
         free_cf = operating + capex
-        print(earnings)
-        print(free_cf)
         label_n_values = [["operating", operating], ["free", free_cf]]
         for label, values in label_n_values:
             ax.plot(times, values, '-', label=label)
