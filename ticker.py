@@ -8,7 +8,6 @@ import json
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-
 class Ticker:
 
     def __calculate_stats(self):
@@ -204,25 +203,43 @@ class Ticker:
         forecasted_number_years_of_growth = 10  # he recommends 10 years or less
         forcasted_long_term_growth_rate = np.min([3 / 100, forcasted_short_term_growth_rate])  # recommends 3% or lower
 
-        # we calculate the q of the geometric series
-        short_term_q = (1 + forcasted_short_term_growth_rate) / (1 + discount_rate)
-        long_term_q  = (1 + forcasted_long_term_growth_rate)  / (1 + discount_rate)
+        def calc_npv(discount_rate):
+            # we calculate the q of the geometric series
+            short_term_q = (1 + forcasted_short_term_growth_rate) / (1 + discount_rate)
+            long_term_q  = (1 + forcasted_long_term_growth_rate)  / (1 + discount_rate)
 
-        # sum over the short term
-        sum_discounted_fcf_short_term = avarage__annual_free_cash_flow * \
-                                               (short_term_q - short_term_q ** (forecasted_number_years_of_growth+1)) /\
-                                               (1 - short_term_q)
-        # and from its ending to eternity
-        sum_discounted_fcf_long_term = (avarage__annual_free_cash_flow
-                                        * short_term_q ** forecasted_number_years_of_growth) \
-                                        * long_term_q /(discount_rate - forcasted_long_term_growth_rate)
+            # sum over the short term
+            sum_discounted_fcf_short_term = avarage__annual_free_cash_flow * \
+                                                   (short_term_q - short_term_q ** (forecasted_number_years_of_growth+1)) /\
+                                                   (1 - short_term_q)
+            # and from its ending to eternity
+            sum_discounted_fcf_long_term = (avarage__annual_free_cash_flow
+                                            * short_term_q ** forecasted_number_years_of_growth) \
+                                            * long_term_q /(discount_rate - forcasted_long_term_growth_rate)
 
-        intrinsic_value_dcf = (sum_discounted_fcf_short_term + sum_discounted_fcf_long_term) / diluted_shares  # + book_value ?
-        statistics["intrinsic_value_dcf"] = intrinsic_value_dcf
+            intrinsic_value_dcf = (sum_discounted_fcf_short_term + sum_discounted_fcf_long_term) / diluted_shares  # + book_value ?
+            return intrinsic_value_dcf
+        statistics["intrinsic_value_dcf"] = calc_npv(discount_rate)
+
+        # calculate the intrinsic rate of return (by dcf model):
+        lg, sg, N = (forcasted_long_term_growth_rate, forcasted_short_term_growth_rate, forecasted_number_years_of_growth)
+        a0, price = (avarage__annual_free_cash_flow, stock_price)
+        best_result = None
+        best_dr = None
+        for dr in range(0, 1000):  # todo: move to binary search
+            dr = dr / 10000
+            if dr in [-1, lg]:
+                continue
+            npv = calc_npv(dr)
+            error = np.abs(npv - price)
+            if (best_result is None) or error < best_result:
+                best_result = error
+                best_dr = dr
+        statistics["irr[%]"] = best_dr * 100
 
         # basic_discount_ratio
         discount_value = statistics["basic_discount_value"]
-        statistics["basic_discount_ratio"] = discount_value / stock_price
+        statistics["basic_discount_ratio"] = (discount_value - stock_price) / stock_price
 
 
     def _calculate_quick_filter(self):
@@ -276,6 +293,7 @@ class Ticker:
             "basic_discount_value": None,
             "basic_discount_ratio": None,
             "intrinsic_value_dcf": None,
+            "irr[%]": None,
             "current_ratio": None,
             "debt_to_equity": None,
             "market_cap": None,
