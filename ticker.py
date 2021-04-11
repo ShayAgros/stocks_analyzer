@@ -251,19 +251,23 @@ class Ticker:
             - latter: parameters which might be changed later but might be an
               indication for overvalued companies"""
 
-        self.statistics["healthy"] = self.statistics["eps"] > 0 and \
-                                self.statistics["book_value"] > 0 and \
-                                self.statistics["debt_to_equity"] < 3.2 and \
-                                self.statistics["earnings_yearly_trend"] > 0 and \
-                                self.statistics["equity_yearly_trend"] > 0 and \
-                                self.statistics["operating_cf_yearly_trend"] > 0 and \
-                                self.statistics["non_operating_cf_yearly_trend"] < 0 and \
-                                self.statistics["maximal_non_operating_cf"] < 0 and \
-                                self.statistics["minimal_operating_cf"] > 0 and \
-                                self.statistics["roe[%]"] >= 10
+        self.statistics["healthy"] = (self.statistics["eps"] > 0 and
+                                      self.statistics["book_value"] > 0 and
+                                      self.statistics["debt_to_equity"] < 3.2 and
+                                      self.statistics["earnings_yearly_trend"] > 0 and
+                                      self.statistics["equity_yearly_trend"] > 0 and
+                                      self.statistics["operating_cf_yearly_trend"] > 0 and
+                                      self.statistics["non_operating_cf_yearly_trend"] < 0 and
+                                      self.statistics["maximal_non_operating_cf"] < 0 and  # too restrictive
+                                      self.statistics["minimal_operating_cf"] > 0 and
+                                      self.statistics["roe[%]"] >= 10 and
+                                      self.statistics["growth_rate"] >= 2.5
+                                      )
 
-        self.statistics["overvalued"] = self.statistics["pe*bv"] >= 100 or \
-                                self.statistics["naive_time_to_profit"] >= 30
+        self.statistics["overvalued"] = (self.statistics["pe*bv"] >= 100 or
+                                         self.statistics["naive_time_to_profit"] >= 25 or
+                                         self.statistics["irr[%]"] < 10
+                                         )
 
     def __init__(self, symbol, market):
 
@@ -341,12 +345,10 @@ class Ticker:
         plot_terms = ("annual","annual")  # "quarterly")
 
         fig = plt.figure()
-        axs = fig.subplots(2, 2)  # , sharex=True)
-        fig.set_tight_layout(True)
-        fig.suptitle(self.symbol)
+        gs = fig.add_gridspec(3, 2)
 
         # 00 - Book Value
-        ax = axs[0, 0]
+        ax = fig.add_subplot(gs[0, 0])
         label = "book value"
         equity = np.array(self.reports.get_field_as_list("balance_sheet", "annual", "Total Equity"))
         quantity = np.array(self.reports.get_field_as_list("income_statement", "annual", "Diluted Weighted Average Shares"))
@@ -354,19 +356,19 @@ class Ticker:
         times = self.reports.get_reports_dates("annual")
         format_axis(ax)
         ax.plot(times, values, '-', label=label)
-        ax.legend()
+        ax.legend(framealpha=0.4)
 
         # 01 - EPS
-        ax = axs[0, 1]
+        ax = fig.add_subplot(gs[0, 1])
         label = "eps"
         earnings = np.array(self.reports.get_field_as_list("income_statement", "annual", "Net Income"))
         values = earnings / quantity
         format_axis(ax)
         ax.plot(times, values, '-', label=label)
-        ax.legend()
+        ax.legend(framealpha=0.4)
 
         # 10 - {Free, Operating} Cash Flow
-        ax = axs[1, 0]
+        ax = fig.add_subplot(gs[1, 0])
         format_axis(ax)
         # label = ("operating", "free")
         operating = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Cash Flow from Operating Activities"))
@@ -375,40 +377,28 @@ class Ticker:
         label_n_values = [["operating", operating], ["free", free_cf]]
         for label, values in label_n_values:
             ax.plot(times, values, '-', label=label)
-        ax.legend()
+        ax.legend(framealpha=0.4)
 
         # 11 - price & intrinsic value
         # IDK how to calculate the intrinsic value, so just price
-        ax = axs[1, 1]
+        ax = fig.add_subplot(gs[1, 1])
         format_axis(ax)
         label = "price"
         prices = np.array(self.get_price_at_report_dates('annual'))
         ax.plot(times, prices, '-', label=label)
-        ax.legend()
+        ax.legend(framealpha=0.4)
 
-        # for col, term in enumerate(plot_terms):
-        #     for row, field in enumerate([None, *plot_fields]):
-        #         ax = axs[row, col]
-        #         if row == 0:
-        #             # price graph:
-        #             # since this is the first graph, show the term in the title
-        #             ax.set_title(term)
-        #             times, values = self.get_price_graph(term)
+        # wide price graph
+        ax = fig.add_subplot(gs[2, :])
+        format_axis(ax)
+        label = "price"
+        # ax.plot(times, prices, '-', label=label)  # for offline testing
+        ax.plot(*self.get_price_graph('annual'), label=label)
+        ax.legend(framealpha=0.4)
+
         #
-        #         else:
-        #             # statistics graph:
-        #             ax.set_title(field[1])
-        #             plot_reports = self.reports.get_reports_ascending(term, field[0])
-        #             values = [report[field[1]] for report in plot_reports]
-        #             times = self.reports.get_reports_dates(term)
-        #
-        #         # locator = mdates.AutoDateLocator(minticks=3, maxticks=7)
-        #         # formatter = mdates.ConciseDateFormatter(locator)
-        #         # ax.xaxis.set_major_locator(locator)
-        #         # ax.xaxis.set_major_formatter(formatter)
-        #         format_axis(ax)
-        #
-        #         ax.plot(times, values, '-')
+        fig.set_tight_layout(True)
+        fig.suptitle(self.symbol)
         plt.show()
 
     def get_current_pe(self):
