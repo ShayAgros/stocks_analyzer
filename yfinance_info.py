@@ -14,6 +14,8 @@ market_to_yf_market = {
         "TPE"       : "TW",  # Taiwan
         "TYO"       : "T",   # Japan
         "LON"       : "L",   # UK
+        "SWX"       : "SW",  # Switzerland
+        "AMS"       : "AS",  # Holland
         "TLV"       : "TA"   # Israel
     }
 

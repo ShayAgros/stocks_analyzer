@@ -224,10 +224,13 @@ class Ticker:
         # calculate the intrinsic rate of return (by dcf model):
         lg, sg, N = (forcasted_long_term_growth_rate, forcasted_short_term_growth_rate, forecasted_number_years_of_growth)
         a0, price = (avarage__annual_free_cash_flow, stock_price)
+        # iteration parameters
+        max_r = 1
+        delta_r = 0.1 / 100
         best_result = None
         best_dr = None
-        for dr in range(0, 1000):  # todo: move to binary search
-            dr = dr / 10000
+        for dr in range(0, int(1 + max_r / delta_r)):  # todo: move to binary search
+            dr = delta_r * dr
             if dr in [-1, lg]:
                 continue
             npv = calc_npv(dr)

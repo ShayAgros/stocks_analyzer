@@ -17,6 +17,8 @@ site_format_dict = {
     "TAI": site_format_init + "/{report_name}/{term}/fi-144.1.{symbol}.{market}",
     "TKS": site_format_init + "/{report_name}/{term}/fi-133.1.{symbol}.{market}",
     "LON": site_format_init + "/{report_name}/{term}/fi-151.1.{symbol}.{market}",
+    "SWX": site_format_init + "/{report_name}/{term}/fi-182.1.{symbol}.{market}",
+    "AMS": site_format_init + "/{report_name}/{term}/fi-202.1.{symbol}.{market}",
     "TAE": site_format_init + "/{report_name}/{term}/fi-292.1.IS-{symbol}.{market}.{symbol}",
 }
 site_for_ticker_with_dot = site_format_init + "/{report_name}/{term}/fi-126.1.{tempered_symbol}.{market}.{symbol}"
@@ -29,6 +31,8 @@ market_to_msn_market = {
         "TPE"       : "TAI",  # Taiwan
         "TYO"       : "TKS",  # Japan
         "LON"       : "LON",  # UK
+        "SWX"       : "SWX",  # Switzerland
+        "AMS"       : "AMS",  # Holland
         "TLV"       : "TAE"   # Israel
     }
 
@@ -135,8 +139,12 @@ class Reports:
                 for ul in document.find("ul").has(selector):
                     p = ul.find(selector)
                     if p.attr("title") == key:
-                        str_value = ul.find("li")[i+1].find('p').attr("title")
-                        store_process_value(term_dict[quarter_name], key, str_value)
+                        try:
+                            str_value = ul.find("li")[i+1].find('p').attr("title")
+                            store_process_value(term_dict[quarter_name], key, str_value)
+                        except IndexError:
+                            print("Failed to fetch field %s of stock %s. skipping" % (key, self.symbol))
+                            store_process_value(term_dict[quarter_name], key, '-')
 
     def __fetch_url(self, site_url, site_file):
         response = requests.request("GET", site_url)
