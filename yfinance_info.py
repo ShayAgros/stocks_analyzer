@@ -16,7 +16,9 @@ market_to_yf_market = {
         "LON"       : "L",   # UK
         "SWX"       : "SW",  # Switzerland
         "AMS"       : "AS",  # Holland
-        "TLV"       : "TA"   # Israel
+        "STO"       : "ST",  # Sweden
+        "TLV"       : "TA",  # Israel
+        "KRX"       : "KS",  # Korea
     }
 
 
@@ -100,7 +102,7 @@ class YahooInfo:
         return times, self.translate_price(prices)
 
     def __init__(self, symbol, market):
-        symbol = symbol.replace('.', '-')  # for tickers like "brk.b"
+        symbol = symbol.replace('.', '-').replace(' ', '-')  # for tickers like "brk.b"
         if market not in market_to_yf_market.keys():
             raise Exception("unrecognised market")
         self.market_endian = market_to_yf_market[market]

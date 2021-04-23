@@ -19,27 +19,32 @@ site_format_dict = {
     "LON": site_format_init + "/{report_name}/{term}/fi-151.1.{symbol}.{market}",
     "SWX": site_format_init + "/{report_name}/{term}/fi-182.1.{symbol}.{market}",
     "AMS": site_format_init + "/{report_name}/{term}/fi-202.1.{symbol}.{market}",
+    "STO": site_format_init + "/{report_name}/{term}/fi-170.1.{symbol}.{market}",
     "TAE": site_format_init + "/{report_name}/{term}/fi-292.1.IS-{symbol}.{market}.{symbol}",
+    "KRX": site_format_init + "/{report_name}/{term}/fi-141.1.A{symbol}.{market}.{symbol}",
 }
-site_for_ticker_with_dot = site_format_init + "/{report_name}/{term}/fi-126.1.{tempered_symbol}.{market}.{symbol}"
+site_for_ticker_with_dot = lambda site: site.format(symbol="{tempered_symbol}.{market}", market="{symbol}",
+                                                    report_name="{report_name}", term="{term}")  # will work only on standart countries
 report_dir = "./msn_reports"
 file_format = "{symbol}-{market}-{report_name}-{term}.html"
 
 market_to_msn_market = {
-        "NASDAQ"    : "NAS",
-        "NYSE"      : "NYS",
-        "TPE"       : "TAI",  # Taiwan
-        "TYO"       : "TKS",  # Japan
-        "LON"       : "LON",  # UK
-        "SWX"       : "SWX",  # Switzerland
-        "AMS"       : "AMS",  # Holland
-        "TLV"       : "TAE"   # Israel
-    }
+    "NASDAQ": "NAS",
+    "NYSE": "NYS",
+    "TPE": "TAI",  # Taiwan
+    "TYO": "TKS",  # Japan
+    "LON": "LON",  # UK
+    "SWX": "SWX",  # Switzerland
+    "AMS": "AMS",  # Holland
+    "STO": "STO",  # Sweden
+    "TLV": "TAE",  # Israel
+    "KRX": "KRX",  # Korea
+}
 
 num_of_fields = {
     "annual": 4,
     "quarterly": 4
-} 
+}
 fields = {
     "balance_sheet": [
         "Period End Date",
@@ -65,8 +70,8 @@ fields = {
         "Cash Flow from Operating Activities",
         # "Cash Flow from Investing Activities",  # Warnning! in msft this field is '-', but the graph is still viewable
         # "Cash Flow from Financing Activities",
-        "Change in Cash",                       # Im using this field minus the operating as a more stable replacement
-                                                # to the sum of investing + financing
+        "Change in Cash",  # Im using this field minus the operating as a more stable replacement
+        # to the sum of investing + financing
         "Common Stock Dividends Paid",
         "Purchase/Sale of Prop,Plant,Equip: Net"  # Capital Expenditures
     ]
@@ -85,15 +90,16 @@ def store_process_value(term_dict, key, str_value):
 
     if key == "Period End Date":
         m = re.match(r"(?P<month>\d+)/(?P<day>\d+)/(?P<year>\d+)", str_value)
-        term_dict[key] = { key: int(value) for key, value in m.groupdict().items()}
+        term_dict[key] = {key: int(value) for key, value in m.groupdict().items()}
     elif key in ("Currency Code",):
         term_dict[key] = str_value
     elif str_value == "-":
         term_dict[key] = float('NaN')
     else:
         value = float(str_value.replace(',', ''))
-        value = value * 10**6
+        value = value * 10 ** 6
         term_dict[key] = value
+
 
 def get_number_of_fields(document, searched_field):
     """ Get an htmlDom object and count how many instances of a tag exist in it
@@ -107,14 +113,15 @@ def get_number_of_fields(document, searched_field):
 
     return num
 
+
 # TODO: catch specific exceptions and not just assume what they are
 class Reports:
 
     def __parse_fields(self, term, report_name):
         """ parse all fields defined in self.fields and insert them into a
         a dictionary """
-        site_file_name = file_format.format(symbol = self.symbol, market = self.market, report_name = report_name, term = term)
-        site_path = path.join(report_dir, site_file_name) 
+        site_file_name = file_format.format(symbol=self.symbol, market=self.market, report_name=report_name, term=term)
+        site_path = path.join(report_dir, site_file_name)
         with open(site_path) as f:
             document = htmldom.HtmlDom()
             document.createDom(f.read())
@@ -140,7 +147,7 @@ class Reports:
                     p = ul.find(selector)
                     if p.attr("title") == key:
                         try:
-                            str_value = ul.find("li")[i+1].find('p').attr("title")
+                            str_value = ul.find("li")[i + 1].find('p').attr("title")
                             store_process_value(term_dict[quarter_name], key, str_value)
                         except IndexError:
                             print("Failed to fetch field %s of stock %s. skipping" % (key, self.symbol))
@@ -157,22 +164,27 @@ class Reports:
             f.write(response.text)
 
     def __parse_and_save_report(self, term, report_name):
-        site_file_name = file_format.format(symbol = self.symbol, market = self.market, report_name = report_name, term = term)
-        site_path = path.join(report_dir, site_file_name) 
+        site_file_name = file_format.format(symbol=self.symbol, market=self.market, report_name=report_name, term=term)
+        site_path = path.join(report_dir, site_file_name)
 
-        if "." in self.symbol:
-            site_symbol = self.symbol.replace(".", "%7CSLA%7C")
-            site_url = site_for_ticker_with_dot.format(report_name = report_name, term=term, symbol=self.symbol, market=self.msn_market, tempered_symbol=site_symbol)
+        if "." in self.symbol or " " in self.symbol:
+            site_symbol = self.symbol.replace(".", "%7CSLA%7C").replace(" ", "%7CSLA%7C")
+            site_format = site_for_ticker_with_dot(site_format_dict[self.msn_market])
+            site_url = site_format.format(report_name=report_name, term=term, symbol=self.symbol,
+                                                       market=self.msn_market, tempered_symbol=site_symbol)
         else:
-            site_url = site_format_dict[self.msn_market].format(report_name = report_name, term=term, symbol=self.symbol, market=self.msn_market)
+            site_url = site_format_dict[self.msn_market].format(report_name=report_name, term=term, symbol=self.symbol,
+                                                                market=self.msn_market)
 
         # Didn't parse it yet. Fetch from the web
         if not path.isfile(site_path):
             try:
-                makedirs(report_dir, exist_ok = True)
+                makedirs(report_dir, exist_ok=True)
                 self.__fetch_url(site_url, site_path)
             except:
-                raise Exception("Failed to fetch site symbol: {} market: {} msn market: {}".format(self.symbol, self.market, self.msn_market))
+                raise Exception(
+                    "Failed to fetch site symbol: {} market: {} msn market: {}".format(self.symbol, self.market,
+                                                                                       self.msn_market))
 
         self.__parse_fields(term, report_name)
 
@@ -217,8 +229,8 @@ class Reports:
         return result
 
     def __init__(self, symbol, market):
-        self.symbol     = symbol
-        self.market     = market
+        self.symbol = symbol
+        self.market = market
 
         try:
             self.msn_market = market_to_msn_market[market]
