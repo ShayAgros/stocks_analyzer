@@ -188,29 +188,35 @@ class Reports:
 
         self.__parse_fields(term, report_name)
 
-    def get_reports_ascending(self, term, report_name):
+    def get_reports_ascending(self, term, report_name, add_ttm=False):
         report_dict = getattr(self, report_name)
         term_dict = report_dict[term]
 
         ordered_terms = sorted(term_dict.keys())
-        return [term_dict[t] for t in ordered_terms]
+        ordered_reports = [term_dict[t] for t in ordered_terms]
+        if term == "annual" and add_ttm:
+            ordered_reports.append(self.get_ttm(report_name))
+        return ordered_reports
 
     def get_last_report(self, term, report_name):
         ordered_reports = self.get_reports_ascending(term, report_name)
         return ordered_reports[-1]
 
-    def get_reports_dates(self, term):
+    def get_reports_dates(self, term, add_ttm=False):
         # it doesnt really matter if we take the dates from a balance_sheet or income_statement:
-        reports_ordered = self.get_reports_ascending(term, 'balance_sheet')
+        reports_ordered = self.get_reports_ascending(term, 'balance_sheet', add_ttm)
         dates = [report["Period End Date"] for report in reports_ordered]
         dates = [datetime.datetime(date["year"], date["month"], date["day"]) for date in dates]
         return dates
 
-    def get_field_as_list(self, report, term, field):
-        return [r[field] for r in self.get_reports_ascending(term, report)]
+    def get_field_as_list(self, report, term, field, add_ttm=False):
+        return [r[field] for r in self.get_reports_ascending(term, report, add_ttm)]
 
     def get_ttm(self, report: str) -> dict:
         """ get the trailing twelve months of data (or less if quarters are missing in the reports) """
+        if hasattr(self.__cached_ttm, report):
+            return self.__cached_ttm[report]
+
         result = dict()
         reports = self.get_reports_ascending("quarterly", report)
         num_of_quarters = len(reports)
@@ -226,6 +232,8 @@ class Reports:
             else:
                 # if we are missing reports, we still want the numbers to be annual-like
                 result[field] = sum([r[field] for r in reports]) * 4 / num_of_quarters
+
+        self.__cached_ttm[report] = result
         return result
 
     def __init__(self, symbol, market):
@@ -247,6 +255,8 @@ class Reports:
         self.balance_sheet = dict()
         self.income_statement = dict()
         self.cash_flow = dict()
+
+        self.__cached_ttm = dict()
 
         self.__parse_and_save_report("quarterly", "balance_sheet")
         self.__parse_and_save_report("quarterly", "income_statement")

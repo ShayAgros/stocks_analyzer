@@ -329,23 +329,21 @@ class Ticker:
         balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
         stock_price = self.yahoo_info.get_stock_price_at_date(**balance_sheet_date)
 
-    def get_price_graph(self, term):
-        dates = self.reports.get_reports_dates(term)
+    def get_price_graph(self, term, add_ttm=False):
+        dates = self.reports.get_reports_dates(term, add_ttm)
         start_date = dates[0]
         end_date   = dates[-1]
         date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date)
         return date_vector, price_vector
 
-    def get_price_at_report_dates(self, term):
-        reports_ordered = self.reports.get_reports_ascending(term, 'balance_sheet')
+    def get_price_at_report_dates(self, term, add_ttm=False):
+        reports_ordered = self.reports.get_reports_ascending(term, 'balance_sheet', add_ttm)
         dates = [report["Period End Date"] for report in reports_ordered]
         prices = [self.yahoo_info.get_stock_price_at_date(date["day"], date["month"], date["year"]) for date in dates]
         return prices
 
     def plot_me(self):
         # todo add TTM?
-        plot_fields = (("income_statement", "Net Income"), ("balance_sheet", "Total Equity"))
-        plot_terms = ("annual","annual")  # "quarterly")
 
         fig = plt.figure()
         gs = fig.add_gridspec(3, 2)
@@ -353,10 +351,10 @@ class Ticker:
         # 00 - Book Value
         ax = fig.add_subplot(gs[0, 0])
         label = "book value"
-        equity = np.array(self.reports.get_field_as_list("balance_sheet", "annual", "Total Equity"))
-        quantity = np.array(self.reports.get_field_as_list("income_statement", "annual", "Diluted Weighted Average Shares"))
+        equity = np.array(self.reports.get_field_as_list("balance_sheet", "annual", "Total Equity", add_ttm=True))
+        quantity = np.array(self.reports.get_field_as_list("income_statement", "annual", "Diluted Weighted Average Shares", add_ttm=True))
         values = equity / quantity
-        times = self.reports.get_reports_dates("annual")
+        times = self.reports.get_reports_dates("annual", add_ttm=True)
         format_axis(ax)
         ax.plot(times, values, '-', label=label)
         ax.legend(framealpha=0.4)
@@ -364,7 +362,7 @@ class Ticker:
         # 01 - EPS
         ax = fig.add_subplot(gs[0, 1])
         label = "eps"
-        earnings = np.array(self.reports.get_field_as_list("income_statement", "annual", "Net Income"))
+        earnings = np.array(self.reports.get_field_as_list("income_statement", "annual", "Net Income", add_ttm=True))
         values = earnings / quantity
         format_axis(ax)
         ax.plot(times, values, '-', label=label)
@@ -374,8 +372,8 @@ class Ticker:
         ax = fig.add_subplot(gs[1, 0])
         format_axis(ax)
         # label = ("operating", "free")
-        operating = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Cash Flow from Operating Activities"))
-        capex = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Purchase/Sale of Prop,Plant,Equip: Net"))
+        operating = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Cash Flow from Operating Activities", add_ttm=True))
+        capex = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Purchase/Sale of Prop,Plant,Equip: Net", add_ttm=True))
         free_cf = operating + capex
         label_n_values = [["operating", operating], ["free", free_cf]]
         for label, values in label_n_values:
@@ -387,7 +385,7 @@ class Ticker:
         ax = fig.add_subplot(gs[1, 1])
         format_axis(ax)
         label = "price"
-        prices = np.array(self.get_price_at_report_dates('annual'))
+        prices = np.array(self.get_price_at_report_dates('annual', add_ttm=True))
         ax.plot(times, prices, '-', label=label)
         ax.legend(framealpha=0.4)
 
@@ -396,7 +394,7 @@ class Ticker:
         format_axis(ax)
         label = "price"
         # ax.plot(times, prices, '-', label=label)  # for offline testing
-        ax.plot(*self.get_price_graph('annual'), label=label)
+        ax.plot(*self.get_price_graph('annual', add_ttm=True), label=label)
         ax.legend(framealpha=0.4)
 
         #
