@@ -343,8 +343,6 @@ class Ticker:
         return prices
 
     def plot_me(self):
-        # todo add TTM?
-
         fig = plt.figure()
         gs = fig.add_gridspec(3, 2)
 
