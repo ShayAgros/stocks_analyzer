@@ -27,6 +27,7 @@ site_for_ticker_with_dot = lambda site: site.format(symbol="{tempered_symbol}.{m
                                                     report_name="{report_name}", term="{term}")  # will work only on standart countries
 report_dir = "./msn_reports"
 file_format = "{symbol}-{market}-{report_name}-{term}.html"
+cache_file_name = "{symbol}-cached-reports.json"
 
 market_to_msn_market = {
     "NASDAQ": "NAS",
@@ -240,17 +241,25 @@ class Reports:
         self.symbol = symbol
         self.market = market
 
+        symbol_file_name = cache_file_name.format(symbol=symbol)
+        cache_file = "{}/{}".format(report_dir, symbol_file_name)
+        # exit early if a cached version exists
+        if path.isfile(cache_file):
+            with open(cache_file, "r") as f:
+                data = json.load(f)
+                self.balance_sheet = data['balance_sheet']
+                self.income_statement = data['income_statement']
+                self.cash_flow = data['cash_flow']
+                self.__cached_ttm = data['__cached_ttm']
+
+            return
+
+        # not using cached reports, parse the html reports
+
         try:
             self.msn_market = market_to_msn_market[market]
         except:
             raise Exception("market {} is not support for symbol {}".format(market, symbol))
-
-        self.quarter = [None] * 4
-
-        self.table = {
-            "quarterly": None,
-            "annual": None
-        }
 
         self.balance_sheet = dict()
         self.income_statement = dict()
@@ -265,3 +274,12 @@ class Reports:
         self.__parse_and_save_report("annual", "balance_sheet")
         self.__parse_and_save_report("annual", "income_statement")
         self.__parse_and_save_report("annual", "cash_flow")
+
+        # cache the parsed reports
+        with open(cache_file, "w") as f:
+            data = dict()
+            data['balance_sheet'] = self.balance_sheet
+            data['income_statement'] = self.income_statement
+            data['cash_flow'] = self.cash_flow
+            data['__cached_ttm'] = self.__cached_ttm
+            json.dump(data, f, indent=4)
