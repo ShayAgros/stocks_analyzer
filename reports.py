@@ -275,6 +275,10 @@ class Reports:
         self.__parse_and_save_report("annual", "income_statement")
         self.__parse_and_save_report("annual", "cash_flow")
 
+        self.get_ttm("balance_sheet")
+        self.get_ttm("income_statement")
+        self.get_ttm("cash_flow")
+
         # cache the parsed reports
         with open(cache_file, "w") as f:
             data = dict()
