@@ -5,6 +5,12 @@ import json
 from os import makedirs, path
 import datetime
 
+class YfinanceException(Exception):
+    """Exceptions that are thrown from the yfinance class. The class is
+    responsible for fetching the financial data from Yahoo. This includes mostly
+    stock data such as price."""
+    pass
+
 yahoo_dir = "./yahoo_files"
 file_format = "{symbol}-yahoo.json"
 
@@ -62,7 +68,8 @@ class YahooInfo:
         #                  Open      High        Low      Close    Volume  Dividends  Stock Splits
         # Date                                                                                    
         # 2018-03-14  91.601436  91.88071  90.041359  90.378410  32132000          0             0
-        stocks_data = self.yf_symbol.history(start = date, end = next_date)
+        stocks_data = self.yf_symbol.history(start = date, end = next_date,
+                debug = False)
 
         # to stock data at date. Cache and return 'NaN'
         if not len(stocks_data):
@@ -91,7 +98,7 @@ class YahooInfo:
         return self.translate_price(stocks_data.iloc[0]["Close"])
 
     def get_stock_price_in_range(self, from_date, to_date):
-        # in case any date isnt cached, fetch the entire date range and cache
+        # in case any date isn't cached, fetch the entire date range and cache
         # @return date & price vectors
         # todo: this is only a dummy implementation without caching and without filling weekends
         #   this is for testing the rest of the code
@@ -103,8 +110,10 @@ class YahooInfo:
 
     def __init__(self, symbol, market):
         symbol = symbol.replace('.', '-').replace(' ', '-')  # for tickers like "brk.b"
+
         if market not in market_to_yf_market.keys():
-            raise Exception("unrecognised market")
+            raise YfinanceException("unrecognised market")
+
         self.market_endian = market_to_yf_market[market]
         if self.market_endian is not None:
             self.symbol = symbol + "." + self.market_endian
@@ -118,16 +127,12 @@ class YahooInfo:
 
         self.yf_symbol = yf.Ticker(self.symbol)
 
-        if not path.isfile(file_path) or get_seconds_from_now(file_path) > 3600 * 24:
+        if not path.isfile(file_path) or get_seconds_from_now(file_path) > 3600 * 24 * 30: # 30 days
             force_old_data = False
             try:
                 info = self.yf_symbol.info
             except:
-                if path.isfile(file_path):
-                    print("Failed to fetch fresh yf info for symbol {}, trying to use old data".format(self.symbol))
-                    force_old_data = True
-                else:
-                    raise Exception("Failed to create yf symbol {} or fetch its info".format(self.symbol))
+                raise YfinanceException("Failed to create yf symbol {} or fetch its info".format(self.symbol))
 
             makedirs(yahoo_dir, exist_ok=True)
 

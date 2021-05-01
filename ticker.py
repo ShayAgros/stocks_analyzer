@@ -139,14 +139,18 @@ class Ticker:
         statistics["earnings_yearly_trend"] = earnings_fit[1]  # keep the slope
 
         # earnings growth (exponential)
-        earnings_ln = np.log(yearly_earnings)
-        poly_fit = Polynomial.fit(range(len(earnings_ln)), earnings_ln, deg=1)
-        earnings_ln_fit = poly_fit.convert().coef
-        growth_rate = (np.exp(earnings_ln_fit[1]) - 1) * 100
-        statistics["growth_rate"] = growth_rate
-
-        # peg ratio
-        statistics["peg_ratio"] = statistics["pe_ratio"] / growth_rate
+        try:
+            earnings_ln = np.log(yearly_earnings)
+            poly_fit = Polynomial.fit(range(len(earnings_ln)), earnings_ln, deg=1)
+            earnings_ln_fit = poly_fit.convert().coef
+            growth_rate = (np.exp(earnings_ln_fit[1]) - 1) * 100
+            statistics["growth_rate"] = growth_rate
+            # peg ratio
+            statistics["peg_ratio"] = statistics["pe_ratio"] / growth_rate
+        except RuntimeWarning as warn:
+            self.warnings.append("Failed to calculate log growth_rate. Warning: {}".format(warn))
+            statistics["growth_rate"] = float('NaN')
+            statistics["peg_ratio"] = float('NaN')
 
         # equity_trend (total, not per-stock)
         yearly_equity = [sheet["Total Equity"] for sheet in all_yearly_balance_sheets]
@@ -323,6 +327,8 @@ class Ticker:
             "industry": self.yahoo_info.info["industry"],
             }
 
+        # allow __calculate_stats to log warning in this file
+        self.warnings = list()
         self.__calculate_stats()
 
         last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")

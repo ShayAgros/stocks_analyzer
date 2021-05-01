@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
 from ticker import Ticker
+from yfinance_info import YfinanceException
+from reports import MsnReportsException
 import pandas as pd
+import warnings
 
 
 csv_path = "output.csv"
@@ -16,15 +19,29 @@ def create_tickers_from_symbol_names(symbol_list):
     tickers_list = list()
     for symbol, market in symbol_list:
         try:
-            print("Fetching data for {symbol}:{market}\n".format(symbol = symbol,
-                market = market))
+            # print("Fetching data for {symbol}:{market}\n".format(symbol = symbol,
+                # market = market))
             ticker = Ticker(symbol, market)
-        except:
-            print("Failed to create a ticker for {symbol}:{market}".format(
-                symbol = symbol,
-                market = market))
+
+            if ticker.warnings:
+                print("Ticker {}:{} has warnings:".format(symbol, market))
+                # for warn_msg in ticker.warnings:
+                    # print(warn_msg)
+        except YfinanceException as err:
+            print("Failed in yfinance. error: {}".format(err))
+        except MsnReportsException as err:
+            print("Failed in reports. error: {}".format(err))
+        except Exception as e:
+            print(e)
+            raise
+            # print("Failed to create a ticker for {symbol}:{market}".format(
+                # symbol = symbol,
+                # market = market))
+            # print("With following exception:")
+            # print(e)
             # debug: raise
             continue
+
         tickers_list.append(ticker)
 
     return tickers_list

@@ -10,6 +10,12 @@ import time
 import re
 import datetime
 
+class MsnReportsException(Exception):
+    """Exceptions that are thrown from the Reports class. The class is
+    responsible for fetching the financial data from MSN. This includes mostly
+    financial reports."""
+    pass
+
 site_format_init = "https://www.msn.com/en-us/money/stockdetailsvnext/financials"
 site_format_dict = {
     "NAS": site_format_init + "/{report_name}/{term}/fi-126.1.{symbol}.{market}",
@@ -159,8 +165,7 @@ class Reports:
         time.sleep(0.5)
 
         if len(response.text) < 70:
-            print("sute url: " + site_url)
-            raise Exception("MSN Server Error")
+            raise MsnReportsException("MSN Server Error: url {}".format(site_url))
         with open(site_file, "w") as f:
             f.write(response.text)
 
@@ -183,7 +188,7 @@ class Reports:
                 makedirs(report_dir, exist_ok=True)
                 self.__fetch_url(site_url, site_path)
             except:
-                raise Exception(
+                raise MsnReportsException(
                     "Failed to fetch site symbol: {} market: {} msn market: {}".format(self.symbol, self.market,
                                                                                        self.msn_market))
 
@@ -201,7 +206,12 @@ class Reports:
 
     def get_last_report(self, term, report_name):
         ordered_reports = self.get_reports_ascending(term, report_name)
-        return ordered_reports[-1]
+        try:
+            return ordered_reports[-1]
+        except:
+            print("Ticker {}:{}. Parameters: {}, {}".format(self.symbol, self.market,
+                term, report_name))
+            raise
 
     def get_reports_dates(self, term, add_ttm=False):
         # it doesnt really matter if we take the dates from a balance_sheet or income_statement:
@@ -259,7 +269,7 @@ class Reports:
         try:
             self.msn_market = market_to_msn_market[market]
         except:
-            raise Exception("market {} is not support for symbol {}".format(market, symbol))
+            raise MsnReportsException("market {} is not supported for symbol {}".format(market, symbol))
 
         self.balance_sheet = dict()
         self.income_statement = dict()
