@@ -6,43 +6,97 @@ from reports import MsnReportsException
 import pandas as pd
 import warnings
 
+import multiprocessing as mp
+
+# to have colored output
+from colorama import Fore, Back, Style
 
 csv_path = "output.csv"
 
+class tickerWorkerStatus():
+    STATUS_SUCCESS = 0
+    STATUS_WARNINGS = 1
+    STATUS_FAILED = 2
+
+    LONGEST_SYM_MAR_STR_LEN = 30
+
+    def __init__(self, symbol, market):
+        self.symbol = symbol
+        self.market = market
+        self.status = self.STATUS_SUCCESS
+
+    def setWarning(self, msg):
+        self.status = self.STATUS_WARNINGS
+        self.msg = msg
+
+    def setFailure(self, msg):
+        self.status = self.STATUS_FAILED
+        self.msg = msg
+
+    def setTicker(self, ticker):
+        self.ticker = ticker
+
+    def getTicker(self):
+        return self.ticker
+
+    def isFailed(self):
+        return self.status == self.STATUS_FAILED
+
+    def __str__(self):
+        if self.status == self.STATUS_SUCCESS:
+            status_msg = Fore.GREEN + "SUCCESS" + Fore.RESET
+        elif self.status == self.STATUS_WARNINGS:
+            status_msg = Fore.LIGHTMAGENTA_EX + "WARNING" + Fore.RESET + " ({})".format(self.msg)
+        else:
+            status_msg = Fore.RED + "FAILURE" + Fore.RESET + " ({})".format(self.msg)
+
+        symbol_market_str = "{}:{}".format(self.symbol, self.market)
+        padded_symbol_market_str = symbol_market_str.ljust(self.LONGEST_SYM_MAR_STR_LEN)
+        return Fore.BLUE + padded_symbol_market_str + Fore.RESET + "-\t\t" + status_msg
+
 # TODO: replace all silly prints with proper log functions that indicate an
 #   error
+def create_ticker_worker(ticker_queue_tuple):
+
+    symbol, market = ticker_queue_tuple["ticker_tuple"]
+    status_queue = ticker_queue_tuple["queue"]
+
+    status = tickerWorkerStatus(symbol, market)
+    try:
+        # print("Fetching data for {symbol}:{market}\n".format(symbol = symbol,
+            # market = market))
+        ticker = Ticker(symbol, market)
+
+        if ticker.warnings:
+            status.setWarning("Ticker {}:{} has warnings: {}".format(symbol, market, ticker.warnings[0]))
+
+        status.setTicker(ticker)
+    except YfinanceException as err:
+        status.setFailure("Failed in yfinance. error: {}".format(err))
+    except MsnReportsException as err:
+        status.setFailure("Failed in reports. error: {}".format(err))
+
+    status_queue.put(status)
 
 def create_tickers_from_symbol_names(symbol_list):
-    """ Get a list of dictionaries that contain symbol ticker name and its
+    """ Get a list of tuples that contain symbol ticker name and its
         stock exchange. Return a list of class Ticker that represent each of the
         stocks"""
+    manager = mp.Manager()
+    queue   = manager.Queue(len(symbol_list))
+    ticker_queue_tuple = [ { "ticker_tuple" : ticker, "queue" : queue }
+            for ticker in symbol_list ]
+
     tickers_list = list()
-    for symbol, market in symbol_list:
-        try:
-            # print("Fetching data for {symbol}:{market}\n".format(symbol = symbol,
-                # market = market))
-            ticker = Ticker(symbol, market)
+    with mp.Pool(processes=None) as pool:
+        result = pool.map_async(create_ticker_worker, ticker_queue_tuple)
+        while not result.ready():
+            while not queue.empty():
+                status_item = queue.get()
+                if not status_item.isFailed():
+                    tickers_list.append(status_item.getTicker())
 
-            if ticker.warnings:
-                print("Ticker {}:{} has warnings:".format(symbol, market))
-                # for warn_msg in ticker.warnings:
-                    # print(warn_msg)
-        except YfinanceException as err:
-            print("Failed in yfinance. error: {}".format(err))
-        except MsnReportsException as err:
-            print("Failed in reports. error: {}".format(err))
-        except Exception as e:
-            print(e)
-            raise
-            # print("Failed to create a ticker for {symbol}:{market}".format(
-                # symbol = symbol,
-                # market = market))
-            # print("With following exception:")
-            # print(e)
-            # debug: raise
-            continue
-
-        tickers_list.append(ticker)
+                print(status_item)
 
     return tickers_list
 
@@ -132,6 +186,12 @@ def create_tickers_from_file(file_path):
     return create_tickers_from_symbol_names(symbol_list)
 
 def main():
+
+    # make warning throw exceptions
+    # this is important when using Threads to avoid having writing to
+    # stderr in parallel. The warnings would need to be caught explicitly so
+    # that they wouldn't be missed
+    warnings.simplefilter('error')
 
     # 1) Create 'Ticker' variable for every symbol
     # 2) store result in some list
