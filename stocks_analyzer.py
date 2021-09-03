@@ -75,8 +75,16 @@ def create_ticker_worker(ticker_queue_tuple):
         status.setFailure("Failed in yfinance. error: {}".format(err))
     except MsnReportsException as err:
         status.setFailure("Failed in reports. error: {}".format(err))
+    except Exception as err:
+        status.setFailure("Failed with unknown reason. error")
+        print(err)
 
-    status_queue.put(status)
+    try:
+        status_queue.put(status)
+    except Exception as err:
+        print(f"Inserting the ticker {symbol}:{market} object into the queue failed.")
+        print("This probably means that some of its objects cannot be serialized")
+        print("This probably means that some of its objects cannot be serialized")
 
 def create_tickers_from_symbol_names(symbol_list):
     """ Get a list of tuples that contain symbol ticker name and its
