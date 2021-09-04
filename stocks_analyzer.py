@@ -84,7 +84,7 @@ def create_ticker_worker(ticker_queue_tuple):
     except Exception as err:
         print(f"Inserting the ticker {symbol}:{market} object into the queue failed.")
         print("This probably means that some of its objects cannot be serialized")
-        print("This probably means that some of its objects cannot be serialized")
+        print("")
 
 def create_tickers_from_symbol_names(symbol_list):
     """ Get a list of tuples that contain symbol ticker name and its
