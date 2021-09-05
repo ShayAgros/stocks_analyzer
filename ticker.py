@@ -5,24 +5,54 @@ from yfinance_info import YahooInfo
 import numpy as np
 from numpy.polynomial.polynomial import Polynomial
 import json
+import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.widgets
+import sys
+
+
+class StatisticsException(Exception):
+    """Exceptions that are thrown during the Ticker statistics calculation.
+        This will happen mostly due to a bug"""
+    pass
+
+
+def get_exception_line():
+    """use inside except"""
+    frame = sys.exc_info()[2]
+    while frame.tb_next:
+        frame = frame.tb_next
+    return frame.tb_lineno
+
 
 class Ticker:
 
     def __calculate_stats(self):
         statistics = self.statistics
-        all_yearly_income_statements = self.reports.get_reports_ascending("annual", "income_statement")
-        all_yearly_balance_sheets = self.reports.get_reports_ascending("annual", "balance_sheet")
-        all_yearly_cash_flows = self.reports.get_reports_ascending("annual", "cash_flow")
+        use_ttm = self.reports.has_full_ttm()
+        if not use_ttm:
+            self.warnings.append("incomplete TTM")
+        all_yearly_income_statements = self.reports.get_reports_ascending("annual", "income_statement", use_ttm)
+        all_yearly_balance_sheets = self.reports.get_reports_ascending("annual", "balance_sheet", use_ttm)
+        all_yearly_cash_flows = self.reports.get_reports_ascending("annual", "cash_flow", use_ttm)
         last_yearly_balance_sheet = all_yearly_balance_sheets[-1]
         last_yearly_income_statement = all_yearly_income_statements[-1]
         last_yearly_cash_flow = all_yearly_cash_flows[-1]
+        statistics["TTM"] = use_ttm
 
+        # for the tickers with an incomplete ttm, we will still take the most updated values from the quarterly reports
         last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
         last_quarterly_income_statement = self.reports.get_last_report("quarterly", "income_statement")
 
+        annual_dates = self.reports.get_reports_dates("annual", use_ttm)
+        statistics["updated at"] = annual_dates[-1]
+
         yahoo_info = self.yahoo_info
+
+        statistics["price on update"] = self.yahoo_info.get_stock_price_at_date(annual_dates[-1].day,
+                                                                                annual_dates[-1].month,
+                                                                                annual_dates[-1].year)
 
         # calculate eps
         earnings = last_yearly_income_statement["Net Income"]
@@ -38,7 +68,7 @@ class Ticker:
         non_operating_cash_flow = total_cash_flow - operating_cash_flow
         statistics["non_operating_cfps"] = operating_cash_flow / shares_outstanding
 
-        # owners earnings
+        # owners earnings  - aka free cash flow
         owners_earnings = operating_cash_flow - last_yearly_cash_flow["Purchase/Sale of Prop,Plant,Equip: Net"]
         statistics["owners_earnings"] = owners_earnings / shares_outstanding
 
@@ -46,20 +76,23 @@ class Ticker:
         total_equity = last_quarterly_balance_sheet["Total Equity"]
         shares_outstanding = last_quarterly_income_statement["Diluted Weighted Average Shares"]  # Diluted
         statistics["book_value"] = total_equity / shares_outstanding
+        statistics["shares (diluted)"] = shares_outstanding
 
         # dividends. Negate the "Common Stock Dividends Paid" field since it indicates lost money for the company
         # take the non-diluted number of shares since only real stocks receives dividends
-        dividends = (-last_yearly_cash_flow["Common Stock Dividends Paid"]) / last_yearly_balance_sheet["Ordinary Shares Outstanding"]
+        dividends = (-last_yearly_cash_flow["Common Stock Dividends Paid"]) / last_yearly_balance_sheet[
+            "Ordinary Shares Outstanding"]
         statistics["dividends"] = dividends
 
         # delta_book_value
-        yearly_total_equity = all_yearly_balance_sheets[-2]["Total Equity"]
-        yearly_shares_outstanding = all_yearly_income_statements[-2]["Diluted Weighted Average Shares"]
+        indicies = (-3, -2) if use_ttm else (-2, -1)  # we ignore the ttm
+        yearly_total_equity = all_yearly_balance_sheets[indicies[0]]["Total Equity"]
+        yearly_shares_outstanding = all_yearly_income_statements[indicies[0]]["Diluted Weighted Average Shares"]
         old_bv = yearly_total_equity / yearly_shares_outstanding
-        yearly_total_equity = all_yearly_balance_sheets[-1]["Total Equity"]
-        yearly_shares_outstanding = all_yearly_income_statements[-1]["Diluted Weighted Average Shares"]
+        yearly_total_equity = all_yearly_balance_sheets[indicies[1]]["Total Equity"]
+        yearly_shares_outstanding = all_yearly_income_statements[indicies[1]]["Diluted Weighted Average Shares"]
         new_bv = yearly_total_equity / yearly_shares_outstanding
-        delta_book_value = new_bv - old_bv
+        delta_book_value = (new_bv - old_bv) / ((annual_dates[indicies[1]] - annual_dates[indicies[0]]).days / 365.25)
 
         # actual owners earnings
         statistics["actual_earnings"] = delta_book_value + dividends
@@ -67,10 +100,11 @@ class Ticker:
         # price to book
         balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
         stock_price = yahoo_info.get_stock_price_at_date(**balance_sheet_date)
-        book_value  = statistics["book_value"]
+        book_value = statistics["book_value"]
         statistics["price_to_book"] = stock_price / book_value
 
         # pe ratio
+        # NOTE: uses the last quarter price, but if without ttm, earnings of last year, true for all of our ratios
         eps = statistics["eps"]
         statistics["pe_ratio"] = stock_price / eps
 
@@ -106,16 +140,15 @@ class Ticker:
 
         self._calculate_trends(all_yearly_income_statements,
                                all_yearly_balance_sheets,
-                               all_yearly_cash_flows)
-        self._calculate_intrinsic_values(all_yearly_income_statements,
-                               all_yearly_balance_sheets,
                                all_yearly_cash_flows,
-                               shares_outstanding,
-                               stock_price)
+                               annual_dates)
+        self._calculate_intrinsic_values(shares_outstanding,
+                                         stock_price,
+                                         annual_dates[-1])
         self._calculate_quick_filter()
-    
+
     def _calculate_trends(self, all_yearly_income_statements,
-                          all_yearly_balance_sheets, all_yearly_cash_flows):
+                          all_yearly_balance_sheets, all_yearly_cash_flows, annual_dates):
         """ Calculate 1st order trends from the financial reports statements.
         The trends are:
             - Net income trend
@@ -131,36 +164,89 @@ class Ticker:
         """
 
         statistics = self.statistics
+        years = Ticker.__calculate_year_diff(annual_dates)
 
         # earnings trend (total, not per-stock)
         yearly_earnings = [statement["Net Income"] for statement in all_yearly_income_statements]
-        poly_fit = Polynomial.fit(range(len(yearly_earnings)), yearly_earnings, deg=1)
-        earnings_fit = poly_fit.convert().coef
+        poly_fit = Polynomial.fit(years, yearly_earnings, deg=1)
+        earnings_fit = poly_fit.coef  # TODO: --- check what changed when I removed the .convert() ---
         statistics["earnings_yearly_trend"] = earnings_fit[1]  # keep the slope
 
         # earnings growth (exponential)
         try:
             earnings_ln = np.log(yearly_earnings)
-            poly_fit = Polynomial.fit(range(len(earnings_ln)), earnings_ln, deg=1)
-            earnings_ln_fit = poly_fit.convert().coef
+            poly_fit = Polynomial.fit(years, earnings_ln, deg=1)
+            earnings_ln_fit = poly_fit.coef
             growth_rate = (np.exp(earnings_ln_fit[1]) - 1) * 100
             statistics["growth_rate"] = growth_rate
             # peg ratio
             statistics["peg_ratio"] = statistics["pe_ratio"] / growth_rate
         except RuntimeWarning as warn:
-            self.warnings.append("Failed to calculate log growth_rate. Warning: {}".format(warn))
-            statistics["growth_rate"] = float('NaN')
-            statistics["peg_ratio"] = float('NaN')
+            if yearly_earnings[0] > 0 and yearly_earnings[-1] > 0:
+                self.warnings.append("Failed to calculate log growth_rate. Growth rate fallback calculation")
+                growth_rate = (yearly_earnings[-1] / yearly_earnings[0]) ** (1 / years[-1])
+                growth_rate = (growth_rate - 1) * 100
+                statistics["growth_rate"] = growth_rate
+                statistics["peg_ratio"] = statistics["pe_ratio"] / growth_rate
+            else:
+                self.warnings.append("Failed to calculate log growth_rate. Warning: {}".format(warn))
+                statistics["growth_rate"] = float('NaN')
+                statistics["peg_ratio"] = float('NaN')
+
+        # revenues trend (total, not per-stock)
+        yearly_revenues = [statement["Total Revenue"] for statement in all_yearly_income_statements]
+        poly_fit = Polynomial.fit(years, yearly_revenues, deg=1)
+        revenues_fit = poly_fit.coef
+        statistics["revenues_yearly_trend"] = revenues_fit[1]  # keep the slope
+
+        # revenue growth
+        try:
+            revenues_ln = np.log(yearly_revenues)
+            poly_fit = Polynomial.fit(years, revenues_ln, deg=1)
+            revenues_ln_fit = poly_fit.convert().coef
+            revenue_growth_rate = (np.exp(revenues_ln_fit[1]) - 1) * 100
+            statistics["revenue_growth_rate"] = revenue_growth_rate
+            # peg ratio
+            statistics["peg_ratio"] = statistics["pe_ratio"] / revenue_growth_rate
+        except RuntimeWarning as warn:
+            if yearly_revenues[0] > 0 and yearly_revenues[-1] > 0:
+                self.warnings.append("Failed to calculate log revenue_growth_rate. Growth rate fallback calculation")
+                revenue_growth_rate = (yearly_revenues[-1] / yearly_revenues[0]) ** (1 / years[-1])
+                revenue_growth_rate = (revenue_growth_rate - 1) * 100
+                statistics["revenue_growth_rate"] = revenue_growth_rate
+            else:
+                self.warnings.append("Failed to calculate log revenue_growth_rate. Warning: {}".format(warn))
+                statistics["revenue_growth_rate"] = float('NaN')
 
         # equity_trend (total, not per-stock)
         yearly_equity = [sheet["Total Equity"] for sheet in all_yearly_balance_sheets]
-        poly_fit = Polynomial.fit(range(len(yearly_equity)), yearly_equity, deg=1)
+        poly_fit = Polynomial.fit(years, yearly_equity, deg=1)
         equity_fit = poly_fit.convert().coef
         statistics["equity_yearly_trend"] = equity_fit[1]  # keep the slope
 
+        # bv growth rate
+        shares = [statement["Diluted Weighted Average Shares"] for statement in all_yearly_income_statements]
+        yearly_bv = np.divide(yearly_equity, shares)
+        try:
+            equity_ln = np.log(yearly_bv)  # might throw
+            poly_fit = Polynomial.fit(years, equity_ln, deg=1)
+            equity_ln_fit = poly_fit.convert().coef
+            bv_growth_rate = (np.exp(equity_ln_fit[1]) - 1) * 100
+            statistics["bv_growth_rate"] = bv_growth_rate
+        except RuntimeWarning as warn:
+            if yearly_bv[0] > 0 and yearly_bv[-1] > 0:
+                self.warnings.append("Failed to calculate log bv_growth_rate. Growth rate fallback calculation")
+                bv_growth_rate = (yearly_bv[-1] / yearly_bv[0]) ** (1 / years[-1])
+                bv_growth_rate = (bv_growth_rate - 1) * 100
+                statistics["bv_growth_rate"] = bv_growth_rate
+            else:
+                self.warnings.append("Failed to calculate log bv_growth_rate. Warning: {}".format(warn))
+                statistics["bv_growth_rate"] = float('NaN')
+
         # operating cash flow trend
-        yearly_operating_cash_flow = np.array([flow["Cash Flow from Operating Activities"] for flow in all_yearly_cash_flows])
-        poly_fit = Polynomial.fit(range(len(yearly_operating_cash_flow)), yearly_operating_cash_flow, deg=1)
+        yearly_operating_cash_flow = np.array(
+            [flow["Cash Flow from Operating Activities"] for flow in all_yearly_cash_flows])
+        poly_fit = Polynomial.fit(years, yearly_operating_cash_flow, deg=1)
         operating_cf_fit = poly_fit.convert().coef
         statistics["operating_cf_yearly_trend"] = operating_cf_fit[1]  # keep the slope
 
@@ -170,7 +256,7 @@ class Ticker:
         # non operating cash flow trend
         yearly_total_cash_flow = np.array([flow["Change in Cash"] for flow in all_yearly_cash_flows])
         yearly_non_operating_cash_flow = yearly_total_cash_flow - yearly_operating_cash_flow
-        poly_fit = Polynomial.fit(range(len(yearly_non_operating_cash_flow)), yearly_non_operating_cash_flow, deg=1)
+        poly_fit = Polynomial.fit(years, yearly_non_operating_cash_flow, deg=1)
         non_operating_cf_fit = poly_fit.convert().coef
         statistics["non_operating_cf_yearly_trend"] = non_operating_cf_fit[1]  # keep the slope
 
@@ -184,50 +270,135 @@ class Ticker:
         return cashflow_statement["Cash Flow from Operating Activities"] + \
                cashflow_statement["Purchase/Sale of Prop,Plant,Equip: Net"]
 
-    def _calculate_intrinsic_values(self, all_yearly_income_statements,
-                          all_yearly_balance_sheets, all_yearly_cash_flows, diluted_shares, stock_price):
+    @staticmethod
+    def __calculate_time_forward(last_annual_date):
+        now = datetime.datetime.now()
+        return (now - last_annual_date).days / 365.25
+
+    @staticmethod
+    def __calculate_year_diff(annual_dates):
+        first_date = annual_dates[0]
+        return [(date - first_date).days / 365.25 for date in annual_dates]
+
+    def get_irr(self):
+        """ a wrapper of _calc_dcf_intrinsic_values for the gui part (with current price) """
+        _, irr = self._calc_dcf_intrinsic_values(forward_to_present=True)
+        _, linear_irr = self._calc_dcf_intrinsic_values(
+            use_bv_growth=False,
+            forward_to_present=True,
+            short_term_is_linear=True,
+            long_growth_duration=0,
+            forecasted_number_years_of_growth=10
+        )
+        return irr, linear_irr
+
+    def _calculate_intrinsic_values(self, diluted_shares, stock_price, last_annual_date):
         statistics = self.statistics
-        approximate_bond_10 = 0.95 * 0.01  # updated @ 19.12.2020
-        approximate_bond_30 = 1.7 * 0.01  # updated @ 19.12.2020
 
-        discount_rate = 10 * 0.01  # the wished return rate of an investment
+        # for reference:
+        # approximate_bond_10 = 0.95 * 0.01  # updated @ 19.12.2020
+        # approximate_bond_30 = 1.7 * 0.01  # updated @ 19.12.2020
+        discount_rate = 10 * 0.01  # the wished return rate of an investment (used only for the basic calculations)
 
-        # basic_discount_value - todo: check my formula
+        # --- basic_discount_value - todo: check my formula
+        #
         #   current book_value plus the summary of the discounted eps till the end of time
-        #   assumes fixed eps and a rather arbitrary bond yield rate
-        approximate_bond = approximate_bond_30
+        #   assumes fixed eps and a pre-selected discount ratio
         book_value = statistics["book_value"]
         eps = statistics["eps"]
-        statistics["basic_discount_value"] = book_value + eps * ((1 + approximate_bond) / approximate_bond)
+        statistics["basic_discount_value"] = book_value + eps * ((1 + discount_rate) / discount_rate)
 
-        # The Discounted Free Cash Flow Model (according to the youtube course):
+        # basic_discount_ratio todo: polish details so can be used in the graphical part
+        discount_value = statistics["basic_discount_value"]
+        statistics["basic_discount_ratio"] = 100 * (discount_value - stock_price) / stock_price
+
+        # --- dcf model ---
+        statistics["intrinsic_value_dcf"], statistics["irr[%]"] = self._calc_dcf_intrinsic_values()
+
+    def _calc_dcf_intrinsic_values(self,
+                                   discount_rate=10/100,
+                                   use_bv_growth=True,
+                                   add_bv=True,
+                                   forward_to_present=False,
+                                   short_term_is_linear=False,
+                                   long_growth_duration=-1,
+                                   forecasted_number_years_of_growth=8,
+                                   maximal_long_term_growth_rate=3/100
+                                   ):
+        #
+        # --- The Discounted Free Cash Flow Model (according to the youtube course): ---
+        #
         #   10 years of data are preffered, we use only 4
-        avarage__annual_free_cash_flow = np.mean([Ticker.__calculate_free_cash_flow(report) for report in all_yearly_cash_flows])
-        forcasted_short_term_growth_rate = statistics["growth_rate"] / 100  # in the video he used a simple root calculation
-        forecasted_number_years_of_growth = 10  # he recommends 10 years or less
-        forcasted_long_term_growth_rate = np.min([3 / 100, forcasted_short_term_growth_rate])  # recommends 3% or lower
+
+        use_ttm = self.reports.has_full_ttm()
+        all_yearly_cash_flows = self.reports.get_reports_ascending("annual", "cash_flow", use_ttm)
+        statistics = self.statistics
+        book_value = statistics["book_value"]
+        last_annual_date = statistics["updated at"]
+        old_stock_price = statistics["price on update"]
+        diluted_shares = statistics["shares (diluted)"]
+
+
+        if forward_to_present:
+            stock_price = self.yahoo_info.get_stock_price_now()
+        else:
+            stock_price = old_stock_price
+        if use_bv_growth:
+            forcasted_short_term_growth_rate = statistics[
+                                                   "bv_growth_rate"] / 100  # how we remove stocks sale from value?
+        else:
+            forcasted_short_term_growth_rate = statistics[
+                                                   "growth_rate"] / 100  # in the video he used a simple root calculation
+        forcasted_long_term_growth_rate = np.min([maximal_long_term_growth_rate, forcasted_short_term_growth_rate])
+        # estimation for the first next cashflow (multiply in the growth rate once)
+        average_annual_free_cash_flow = np.mean(
+            [Ticker.__calculate_free_cash_flow(report) for report in all_yearly_cash_flows])
+        if short_term_is_linear:
+            # only use earnings, for equity growth, we need to think on a different model (quadratic) todo
+            # no ttm in the average
+            average_earnings = np.average(self.reports.get_field_as_list("income_statement", "annual", "Net Income"))
+            linear_growth = statistics["earnings_yearly_trend"] * average_annual_free_cash_flow / average_earnings
+            forcasted_long_term_growth_rate = maximal_long_term_growth_rate  # keep it independent of the log-regression
 
         def calc_npv(discount_rate):
             # we calculate the q of the geometric series
             short_term_q = (1 + forcasted_short_term_growth_rate) / (1 + discount_rate)
-            long_term_q  = (1 + forcasted_long_term_growth_rate)  / (1 + discount_rate)
+            long_term_q = (1 + forcasted_long_term_growth_rate) / (1 + discount_rate)
 
             # sum over the short term
-            sum_discounted_fcf_short_term = avarage__annual_free_cash_flow * \
-                                                   (short_term_q - short_term_q ** (forecasted_number_years_of_growth+1)) /\
-                                                   (1 - short_term_q)
+            if not short_term_is_linear:
+                first_short_term = average_annual_free_cash_flow * short_term_q
+                last_short_term = average_annual_free_cash_flow * (short_term_q ** forecasted_number_years_of_growth)
+                sum_discounted_fcf_short_term = (first_short_term - last_short_term * short_term_q) / (1 - short_term_q)
+            else:
+                # there is no easy formula for *discounted* constant addition, we will calculate explicitly
+                terms = np.arange(1, forecasted_number_years_of_growth + 1)
+                fcf = average_annual_free_cash_flow + linear_growth * terms
+                dfcf = fcf / (1 + discount_rate) ** terms
+                sum_discounted_fcf_short_term = np.sum(dfcf)
+                last_short_term = dfcf[-1]
+
             # and from its ending to eternity
-            sum_discounted_fcf_long_term = (avarage__annual_free_cash_flow
-                                            * short_term_q ** forecasted_number_years_of_growth) \
-                                            * long_term_q /(discount_rate - forcasted_long_term_growth_rate)
+            first_long_term = last_short_term * long_term_q
+            if long_growth_duration < 0:
+                sum_discounted_fcf_long_term = first_long_term / (discount_rate - forcasted_long_term_growth_rate)
+            else:  # (a1-an*q)/(1-q)
+                last_long_term_times_q = last_short_term * long_term_q ** (long_growth_duration + 1)
+                sum_discounted_fcf_long_term = (first_long_term - last_long_term_times_q) / (1 - long_term_q)
 
-            intrinsic_value_dcf = (sum_discounted_fcf_short_term + sum_discounted_fcf_long_term) / diluted_shares  # + book_value ?
+            intrinsic_value_dcf = (sum_discounted_fcf_short_term + sum_discounted_fcf_long_term) / diluted_shares
+            if add_bv:
+                intrinsic_value_dcf += book_value
+            if forward_to_present:
+                years = Ticker.__calculate_time_forward(last_annual_date)
+                intrinsic_value_dcf *= (discount_rate + 1) ** years
             return intrinsic_value_dcf
-        statistics["intrinsic_value_dcf"] = calc_npv(discount_rate)
 
+        intrinsic_value = calc_npv(discount_rate)
         # calculate the intrinsic rate of return (by dcf model):
-        lg, sg, N = (forcasted_long_term_growth_rate, forcasted_short_term_growth_rate, forecasted_number_years_of_growth)
-        a0, price = (avarage__annual_free_cash_flow, stock_price)
+        lg, sg, N = (
+            forcasted_long_term_growth_rate, forcasted_short_term_growth_rate, forecasted_number_years_of_growth)
+        a0, price = (average_annual_free_cash_flow, stock_price)
         # iteration parameters
         max_r = 1
         delta_r = 0.1 / 100
@@ -242,12 +413,9 @@ class Ticker:
             if (best_result is None) or error < best_result:
                 best_result = error
                 best_dr = dr
-        statistics["irr[%]"] = best_dr * 100
+        irr = best_dr * 100
 
-        # basic_discount_ratio
-        discount_value = statistics["basic_discount_value"]
-        statistics["basic_discount_ratio"] = (discount_value - stock_price) / stock_price
-
+        return intrinsic_value, irr
 
     def _calculate_quick_filter(self):
         """ The function checks several conditions which determine if its a
@@ -265,15 +433,19 @@ class Ticker:
                                       self.statistics["equity_yearly_trend"] > 0 and
                                       self.statistics["operating_cf_yearly_trend"] > 0 and
                                       self.statistics["non_operating_cf_yearly_trend"] < 0 and
+                                      self.statistics["revenues_yearly_trend"] > 0 and
                                       self.statistics["maximal_non_operating_cf"] < 0 and  # too restrictive
                                       self.statistics["minimal_operating_cf"] > 0 and
                                       self.statistics["roe[%]"] >= 10 and
-                                      self.statistics["growth_rate"] >= 2.5
+                                      self.statistics["growth_rate"] >= 2.5 and
+                                      self.statistics["bv_growth_rate"] >= 2.5 and
+                                      self.statistics["revenue_growth_rate"] >= 1.7
                                       )
 
         self.statistics["overvalued"] = (self.statistics["pe*bv"] >= 100 or
-                                         self.statistics["naive_time_to_profit"] >= 25 or
-                                         self.statistics["irr[%]"] < 10
+                                         self.statistics["naive_time_to_profit"] >= 20 or
+                                         self.statistics["irr[%]"] < 10 or
+                                         self.statistics["basic_discount_ratio"] < -1
                                          )
 
     def __init__(self, symbol, market):
@@ -315,30 +487,46 @@ class Ticker:
             "equity_yearly_trend": None,
             "operating_cf_yearly_trend": None,
             "non_operating_cf_yearly_trend": None,
+            "revenues_yearly_trend": None,
             "growth_rate": None,
+            "bv_growth_rate": None,
+            "revenue_growth_rate": None,
             "dividends": None,
             "owners_earnings": None,
             "actual_earnings": None,
+            "shares (diluted)": None,
 
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
             "healthy": None,
             "overvalued": None,
             "sector": self.yahoo_info.info["sector"],
             "industry": self.yahoo_info.info["industry"],
-            }
+            "price on update": None,
+            "updated at": None,
+            "TTM": None
+        }
 
         # allow __calculate_stats to log warning in this file
         self.warnings = list()
-        self.__calculate_stats()
+        try:
+            self.__calculate_stats()
+        except Exception as err:
+            line = get_exception_line()
+            raise StatisticsException(str(err) + " in line: " + str(line))
 
-        last_quarterly_balance_sheet = self.reports.get_last_report("quarterly", "balance_sheet")
-        balance_sheet_date = last_quarterly_balance_sheet["Period End Date"]
-        stock_price = self.yahoo_info.get_stock_price_at_date(**balance_sheet_date)
+    # Plotting:
 
     def get_price_graph(self, term, add_ttm=False):
         dates = self.reports.get_reports_dates(term, add_ttm)
         start_date = dates[0]
-        end_date   = dates[-1]
+        end_date = dates[-1]
+        date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date)
+        return date_vector, price_vector
+
+    def get_price_graph_after_report(self, term, add_ttm=False):
+        dates = self.reports.get_reports_dates(term, add_ttm)
+        start_date = dates[-1]
+        end_date = datetime.datetime.now()
         date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date)
         return date_vector, price_vector
 
@@ -356,7 +544,9 @@ class Ticker:
         ax = fig.add_subplot(gs[0, 0])
         label = "book value"
         equity = np.array(self.reports.get_field_as_list("balance_sheet", "annual", "Total Equity", add_ttm=True))
-        quantity = np.array(self.reports.get_field_as_list("income_statement", "annual", "Diluted Weighted Average Shares", add_ttm=True))
+        quantity = np.array(
+            self.reports.get_field_as_list("income_statement", "annual", "Diluted Weighted Average Shares",
+                                           add_ttm=True))
         values = equity / quantity
         times = self.reports.get_reports_dates("annual", add_ttm=True)
         format_axis(ax)
@@ -376,8 +566,10 @@ class Ticker:
         ax = fig.add_subplot(gs[1, 0])
         format_axis(ax)
         # label = ("operating", "free")
-        operating = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Cash Flow from Operating Activities", add_ttm=True))
-        capex = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Purchase/Sale of Prop,Plant,Equip: Net", add_ttm=True))
+        operating = np.array(
+            self.reports.get_field_as_list("cash_flow", "annual", "Cash Flow from Operating Activities", add_ttm=True))
+        capex = np.array(self.reports.get_field_as_list("cash_flow", "annual", "Purchase/Sale of Prop,Plant,Equip: Net",
+                                                        add_ttm=True))
         free_cf = operating + capex
         label_n_values = [["operating", operating], ["free", free_cf]]
         for label, values in label_n_values:
@@ -396,15 +588,59 @@ class Ticker:
         # wide price graph
         ax = fig.add_subplot(gs[2, :])
         format_axis(ax)
-        label = "price"
+        # label = "price"
         # ax.plot(times, prices, '-', label=label)  # for offline testing
-        ax.plot(*self.get_price_graph('annual', add_ttm=True), label=label)
-        ax.legend(framealpha=0.4)
+        ax.plot(*self.get_price_graph('annual', add_ttm=self.reports.has_full_ttm()))
+        ax.plot(*self.get_price_graph_after_report('annual', add_ttm=self.reports.has_full_ttm()))
+        # ax.legend(framealpha=0.4)
+
+        # widget
+        rectprops = dict(facecolor='cyan', alpha=0.1)
+        self.widget = matplotlib.widgets.SpanSelector(ax,
+                                                      lambda from_date, to_date: self.show_delta(
+                                                          mdates.num2date(from_date), mdates.num2date(to_date)),
+                                                      'horizontal', rectprops=rectprops)
 
         #
         fig.set_tight_layout(True)
-        fig.suptitle(self.symbol)
+        fig.suptitle(self.symbol + "({:,.2f}): {:.1f}% L {:.1f}%, {:.1f}".format(
+            self.yahoo_info.get_stock_price_now(), *(self.get_irr()), self.get_projected_pe()))
+
         plt.show()
+
+    def show_delta(self, from_date, to_date):
+        """ called by the mpl widget to inspect price growth """
+        #  some sort of rounding of the date, think about how to reflect this to the user
+        start_price = self.yahoo_info.get_stock_price_at_date(from_date.day, from_date.month, from_date.year)
+        end_price = self.yahoo_info.get_stock_price_at_date(to_date.day, to_date.month, to_date.year)
+        change = (end_price - start_price) / start_price
+        # not the real time delta if the market was closed
+        days = (to_date - from_date).days
+        if days == 0:
+            print("price at %s: %.2f" % (from_date.date(), start_price))
+            return
+        years = days / 365.25  # in years
+        yoy_change = (change + 1) ** (1 / years) - 1
+        print("")
+        print("during %s days (%.1f years):" % (days, years))
+        print("price growth: " + "%.2f%%" % (change * 100))
+        print("yearly growth: " + "%.2f%%" % (yoy_change * 100))
+
+    def get_projected_pe(self):
+        """ pe ratio with current price and forcasted growth of the income since the report till now """
+        # estimate income (linear fit) - crude hard copy of the trend calculation:
+        statements = self.reports.get_reports_ascending("annual", "income_statement", self.reports.has_full_ttm())
+        # - subtract some date just to convert to timedelta type
+        annual_dates = [(date - self.statistics["updated at"]).days for date in
+                        self.reports.get_reports_dates("annual", self.reports.has_full_ttm())]
+        yearly_earnings = [statement["Net Income"] for statement in statements]
+        poly_fit = Polynomial.fit(annual_dates, yearly_earnings, deg=1)
+        earnings_fit = poly_fit.convert().coef
+        forecasted_income = earnings_fit[0] + (datetime.datetime.now() - self.statistics["updated at"]).days * \
+                            earnings_fit[1]
+        diluted_shares = self.reports.get_last_report("quarterly", "income_statement")[
+            "Diluted Weighted Average Shares"]
+        return (diluted_shares * self.yahoo_info.get_stock_price_now()) / forecasted_income
 
     def get_current_pe(self):
         """
@@ -440,9 +676,9 @@ class Ticker:
         real_price = self.yahoo_info.get_stock_price_now()
 
         # and finally, the pe ratios:
-        yearly_pe_ratio        = real_price / yearly_eps
-        quarterly_pe_ratio     = real_price / quarterly_eps
-        old_yearly_pe_ratio    = yearly_price / yearly_eps
+        yearly_pe_ratio = real_price / yearly_eps
+        quarterly_pe_ratio = real_price / quarterly_eps
+        old_yearly_pe_ratio = yearly_price / yearly_eps
         old_quarterly_pe_ratio = quarterly_price / quarterly_eps
 
         print("yearly_pe_ratio:        " + str(yearly_pe_ratio))
@@ -450,7 +686,6 @@ class Ticker:
         print("")
         print("old_yearly_pe_ratio:    " + str(old_yearly_pe_ratio))
         print("old_quarterly_pe_ratio: " + str(old_quarterly_pe_ratio))
-
 
 
 def format_axis(ax):

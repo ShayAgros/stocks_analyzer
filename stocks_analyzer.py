@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 
-from ticker import Ticker
+from ticker import Ticker, StatisticsException
 from yfinance_info import YfinanceException
 from reports import MsnReportsException
 import pandas as pd
 import warnings
+import sys
+from time import sleep
 
 import multiprocessing as mp
 
 # to have colored output
 from colorama import Fore, Back, Style
 
-csv_path = "output.csv"
+# make warning throw exceptions
+# this is important when using Threads to avoid having writing to
+# stderr in parallel. The warnings would need to be caught explicitly so
+# that they wouldn't be missed
+warnings.simplefilter('error')
+
 
 class tickerWorkerStatus():
     STATUS_SUCCESS = 0
@@ -23,7 +30,9 @@ class tickerWorkerStatus():
     def __init__(self, symbol, market):
         self.symbol = symbol
         self.market = market
+        self.ticker = None
         self.status = self.STATUS_SUCCESS
+        self.msg = None
 
     def setWarning(self, msg):
         self.status = self.STATUS_WARNINGS
@@ -58,33 +67,44 @@ class tickerWorkerStatus():
 #   error
 def create_ticker_worker(ticker_queue_tuple):
 
-    symbol, market = ticker_queue_tuple["ticker_tuple"]
-    status_queue = ticker_queue_tuple["queue"]
-
-    status = tickerWorkerStatus(symbol, market)
+    # the multiproccesing will hide any uncatched exception, so wrapping the whole function in a general try statement
     try:
-        # print("Fetching data for {symbol}:{market}\n".format(symbol = symbol,
-            # market = market))
-        ticker = Ticker(symbol, market)
+        symbol, market = ticker_queue_tuple["ticker_tuple"]
+        status_queue = ticker_queue_tuple["queue"]
 
-        if ticker.warnings:
-            status.setWarning("Ticker {}:{} has warnings: {}".format(symbol, market, ticker.warnings[0]))
+        status = tickerWorkerStatus(symbol, market)
 
-        status.setTicker(ticker)
-    except YfinanceException as err:
-        status.setFailure("Failed in yfinance. error: {}".format(err))
-    except MsnReportsException as err:
-        status.setFailure("Failed in reports. error: {}".format(err))
+        try:
+            # print("Fetching data for {symbol}:{market}\n".format(symbol = symbol,
+                # market = market))
+            ticker = Ticker(symbol, market)
+
+            if ticker.warnings:
+                status.setWarning("Ticker {}:{} has warnings: {}".format(symbol, market, ", ".join(ticker.warnings)))
+
+            status.setTicker(ticker)
+        except YfinanceException as err:
+            status.setFailure("Failed in yfinance. error: {}".format(err))
+        except MsnReportsException as err:
+            status.setFailure("Failed in reports. error: {}".format(err))
+        except StatisticsException as err:
+            status.setFailure("Failed in statistics. error: {}".format(err))
+        except Exception as err:
+            status.setFailure("Failed in an unknown location. error: {}".format(err))
+
+        #todo ugly workaround, might break future calculations
+        if status.ticker:
+            status.ticker.yahoo_info.yf_symbol = None
+
+        try:
+            status_queue.put(status)
+        except Exception as err:
+            print(f"Inserting the ticker {symbol}:{market} object into the queue failed.")
+            print("This probably means that some of its objects cannot be serialized")
+            print("")
     except Exception as err:
-        status.setFailure("Failed with unknown reason. error")
-        print(err)
+        print(Fore.RED + "ERROR: " + Fore.RESET + str(err))
 
-    try:
-        status_queue.put(status)
-    except Exception as err:
-        print(f"Inserting the ticker {symbol}:{market} object into the queue failed.")
-        print("This probably means that some of its objects cannot be serialized")
-        print("")
 
 def create_tickers_from_symbol_names(symbol_list):
     """ Get a list of tuples that contain symbol ticker name and its
@@ -108,6 +128,7 @@ def create_tickers_from_symbol_names(symbol_list):
 
     return tickers_list
 
+
 def sort_stocks_by_fields(tickers_list, fields):
     """Sort stocks in @tickers_list by the @fields. The stocks
        are sorted by the first item in @fields_name, then by the second and so
@@ -118,6 +139,7 @@ def sort_stocks_by_fields(tickers_list, fields):
         return tuple(ticker.statistics[field[0]] * (field[1] - 0.5) for field in fields)
 
     return sorted(tickers_list, key = get_ticker_fields)
+
 
 def filter_stocks_by_fields(ticker, fields):
     """Check stock @ticker by the elements in @fields which have the
@@ -164,18 +186,14 @@ def stocks_list_to_csv(tickers_list, out_path, show_fields=None, max_count=None,
     if ignore_fields is not None:
         df = df.drop(ignore_fields)
 
-    # print summary to the terminal
-    pd.set_option('max_colwidth', 20)
-    titles = ["name", "pe_ratio", "healthy", "overvalued", "industry"]
-    if show_fields is not None:
-        titles = [field for field in titles if field in show_fields]
-    if ignore_fields is not None:
-        titles = [field for field in titles if field not in ignore_fields]
-    print(df[titles])
-    pd.reset_option('max_colwidth')
-
     # save to file
-    df.to_csv(out_path)
+    try:
+        df.to_csv(out_path)
+    except PermissionError:
+        print("CSV file is opened.\nPlease close the Excel app...\nThis is the last chance")
+        sleep(6)
+        df.to_csv(out_path)
+
 
 def create_tickers_from_file(file_path):
     """The function receives a path to a file containing entries of the form
@@ -185,41 +203,52 @@ def create_tickers_from_file(file_path):
     with open(file_path, "r") as f:
         print("Querying file " + file_path)
         for line in f:
+            if line.startswith("#") or len(line) <= 1:  # allow comments
+                continue
             line_attr = line.split()
-            # print("Ticker: {ticker}   Market: {market}".format(
-                # ticker = line_attr[0],
-                # market = line_attr[1]))
+            line_attr = (" ".join(line_attr[:-1]), line_attr[-1])  # allow spaces in ticker name
             symbol_list.append(line_attr)
 
     return create_tickers_from_symbol_names(symbol_list)
 
+
 def main():
 
-    # make warning throw exceptions
-    # this is important when using Threads to avoid having writing to
-    # stderr in parallel. The warnings would need to be caught explicitly so
-    # that they wouldn't be missed
+
     warnings.simplefilter('error')
 
     # 1) Create 'Ticker' variable for every symbol
     # 2) store result in some list
     # 3) Do something with the Ticker's list
+    # 4) Save in a csv file
+    test_csv = True
+    use_russel = True
+    test_plot = not test_csv
 
-    tickers = create_tickers_from_symbol_names( [ ["MSFT", "NASDAQ"], ["AAPL", "NASDAQ"], ["NVDA", "NASDAQ"] ] )
+    plotted_ticker = ["ERIC A", "STO"]
+    my_stocks_file = "my_stocks.txt"
+    russel_file = "russel_formated.txt"
+    my_stocks_file = russel_file if use_russel else my_stocks_file
 
-    filtering_function = lambda stock: filter_stocks_by_fields(stock, [["eps", 3, False], ["sector", "Technology"]])
-    filtered_stocks = filter(filtering_function, tickers)
-    sorted_stocks = sort_stocks_by_fields(filtered_stocks, [["book_value", True], ["eps", True]])
+    if test_csv:
+        csv_path = ".".join(my_stocks_file.split(".")[:-1]) + "_statistics.csv"
+        try:  # alert the user while still have time
+            with open(csv_path, 'a+'):
+                pass
+        except PermissionError:
+            print("Close Excel!")
+            sleep(3)
 
-    stocks_list_to_csv(sorted_stocks, csv_path)
-    # for stock in filtered_stocks:
-    #     s_name  = stock.symbol
-    #     s_eps   = stock.statistics["eps"]
-    #     s_bv    = stock.statistics["book_value"]
-    #     print("{name}:  eps: {eps}  book_value: {book_value}".format(
-    #             name = s_name,
-    #             eps = s_eps,
-    #             book_value = s_bv))
+        tickers = create_tickers_from_file(my_stocks_file)
+
+        # filtering_function =
+        #   lambda stock: filter_stocks_by_fields(stock, [["eps", 3, False], ["sector", "Technology"]])
+        # tickers = filter(filtering_function, tickers)
+        # tickers = sort_stocks_by_fields(tickers, [["book_value", True], ["eps", True]])
+        stocks_list_to_csv(tickers, csv_path)
+    if test_plot:
+        ticker = Ticker(*plotted_ticker)
+        ticker.plot_me()
 
 
 if __name__ == '__main__':

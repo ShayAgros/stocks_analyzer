@@ -20,6 +20,7 @@ site_format_init = "https://www.msn.com/en-us/money/stockdetailsvnext/financials
 site_format_dict = {
     "NAS": site_format_init + "/{report_name}/{term}/fi-126.1.{symbol}.{market}",
     "NYS": site_format_init + "/{report_name}/{term}/fi-126.1.{symbol}.{market}",
+    "ASE": site_format_init + "/{report_name}/{term}/fi-126.1.{symbol}.{market}",
     "TAI": site_format_init + "/{report_name}/{term}/fi-144.1.{symbol}.{market}",
     "TKS": site_format_init + "/{report_name}/{term}/fi-133.1.{symbol}.{market}",
     "LON": site_format_init + "/{report_name}/{term}/fi-151.1.{symbol}.{market}",
@@ -38,6 +39,7 @@ cache_file_name = "{symbol}-cached-reports.json"
 market_to_msn_market = {
     "NASDAQ": "NAS",
     "NYSE": "NYS",
+    "AMEX": "ASE",  # bought by nyse
     "TPE": "TAI",  # Taiwan
     "TYO": "TKS",  # Japan
     "LON": "LON",  # UK
@@ -89,6 +91,8 @@ non_additive_fields = [
     *fields["balance_sheet"],  # includes "Period End Date" for all of the reports
     "Diluted Weighted Average Shares"
 ]
+
+brk_a2b_ratio = 1500
 
 
 def store_process_value(term_dict, key, str_value):
@@ -156,6 +160,13 @@ class Reports:
                         try:
                             str_value = ul.find("li")[i + 1].find('p').attr("title")
                             store_process_value(term_dict[quarter_name], key, str_value)
+
+                            # small fix for brk.b:
+                            if self.symbol == "BRK.B":
+                                if key in ["Ordinary Shares Outstanding", "Diluted Weighted Average Shares"]:
+                                    term_dict[quarter_name][key] = term_dict[quarter_name][key] * brk_a2b_ratio
+                                # divide dividends?
+
                         except IndexError:
                             print("Failed to fetch field %s of stock %s. skipping" % (key, self.symbol))
                             store_process_value(term_dict[quarter_name], key, '-')
@@ -222,6 +233,10 @@ class Reports:
 
     def get_field_as_list(self, report, term, field, add_ttm=False):
         return [r[field] for r in self.get_reports_ascending(term, report, add_ttm)]
+
+    def has_full_ttm(self) -> bool:
+        quarters = self.balance_sheet['quarterly'].keys()
+        return len(quarters) >= 4
 
     def get_ttm(self, report: str) -> dict:
         """ get the trailing twelve months of data (or less if quarters are missing in the reports) """

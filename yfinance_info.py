@@ -17,6 +17,7 @@ file_format = "{symbol}-yahoo.json"
 market_to_yf_market = {
         "NASDAQ"    : None,  # None value will leave the symbol intact
         "NYSE"      : None,
+        "AMEX"      : None,
         "TPE"       : "TW",  # Taiwan
         "TYO"       : "T",   # Japan
         "LON"       : "L",   # UK
