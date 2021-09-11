@@ -221,34 +221,27 @@ def main():
     # 2) store result in some list
     # 3) Do something with the Ticker's list
     # 4) Save in a csv file
-    test_csv = True
-    use_russel = True
-    test_plot = not test_csv
+    use_russel = not True
 
-    plotted_ticker = ["ERIC A", "STO"]
     my_stocks_file = "my_stocks.txt"
     russel_file = "russel_formated.txt"
     my_stocks_file = russel_file if use_russel else my_stocks_file
 
-    if test_csv:
-        csv_path = ".".join(my_stocks_file.split(".")[:-1]) + "_statistics.csv"
-        try:  # alert the user while still have time
-            with open(csv_path, 'a+'):
-                pass
-        except PermissionError:
-            print("Close Excel!")
-            sleep(3)
+    csv_path = ".".join(my_stocks_file.split(".")[:-1]) + "_statistics.csv"
+    try:  # alert the user while still have time
+        with open(csv_path, 'a+'):
+            pass
+    except PermissionError:
+        print("Close Excel!")
+        sleep(3)
 
-        tickers = create_tickers_from_file(my_stocks_file)
+    tickers = create_tickers_from_file(my_stocks_file)
 
-        # filtering_function =
-        #   lambda stock: filter_stocks_by_fields(stock, [["eps", 3, False], ["sector", "Technology"]])
-        # tickers = filter(filtering_function, tickers)
-        # tickers = sort_stocks_by_fields(tickers, [["book_value", True], ["eps", True]])
-        stocks_list_to_csv(tickers, csv_path)
-    if test_plot:
-        ticker = Ticker(*plotted_ticker)
-        ticker.plot_me()
+    # filtering_function =
+    #   lambda stock: filter_stocks_by_fields(stock, [["eps", 3, False], ["sector", "Technology"]])
+    # tickers = filter(filtering_function, tickers)
+    # tickers = sort_stocks_by_fields(tickers, [["book_value", True], ["eps", True]])
+    stocks_list_to_csv(tickers, csv_path)
 
 
 if __name__ == '__main__':

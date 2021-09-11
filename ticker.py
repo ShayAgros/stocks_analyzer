@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import warnings
 
 from reports import Reports
 from yfinance_info import YahooInfo
@@ -24,6 +25,47 @@ def get_exception_line():
     while frame.tb_next:
         frame = frame.tb_next
     return frame.tb_lineno
+
+
+def search_growth(npv_function, price, min_growth, max_growth=1, delta_growth=0.1/100):
+    """
+    find the iir/growth from the discounted value
+    :param npv_function: function which receive the guessed growth and return  the npv (assume monothonic one)
+    :param price:
+    :param min_groth:
+    :param min_growth:
+    :param max_growth:
+    :param delta_growth:
+    :return:
+    """
+    # calculate the intrinsic rate of return (by dcf model):
+    # iteration parameters
+    best_result = None
+    best_growth = np.nan
+    #plt.figure()
+    skipped = 0
+    for growth in range(0, int(1 + (max_growth-min_growth) / delta_growth)):  # todo: move to binary search
+        growth = delta_growth * growth + min_growth
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("error")
+                npv = npv_function(growth)
+        except Exception:
+            npv = np.nan
+        if npv is None or np.isnan(npv):
+            skipped += 1
+            continue
+        error = np.abs(npv - price)
+        #plt.scatter([growth], [npv - price])
+        if (best_result is None) or error < best_result:
+            best_result = error
+            best_growth = growth
+
+    irr = best_growth * 100
+    if skipped > 0:
+        print("error in npv calculation (%s)" % skipped)
+    #plt.show()
+    return irr
 
 
 class Ticker:
@@ -361,6 +403,7 @@ class Ticker:
             forcasted_long_term_growth_rate = maximal_long_term_growth_rate  # keep it independent of the log-regression
 
         def calc_npv(discount_rate):
+            assert discount_rate > -100E-2, "discontinuity at -1"
             # we calculate the q of the geometric series
             short_term_q = (1 + forcasted_short_term_growth_rate) / (1 + discount_rate)
             long_term_q = (1 + forcasted_long_term_growth_rate) / (1 + discount_rate)
@@ -369,7 +412,10 @@ class Ticker:
             if not short_term_is_linear:
                 first_short_term = average_annual_free_cash_flow * short_term_q
                 last_short_term = average_annual_free_cash_flow * (short_term_q ** forecasted_number_years_of_growth)
-                sum_discounted_fcf_short_term = (first_short_term - last_short_term * short_term_q) / (1 - short_term_q)
+                if short_term_q == 1:  # discontinuity point
+                    sum_discounted_fcf_short_term = first_short_term * forecasted_number_years_of_growth
+                else:
+                    sum_discounted_fcf_short_term = (first_short_term - last_short_term * short_term_q) / (1 - short_term_q)
             else:
                 # there is no easy formula for *discounted* constant addition, we will calculate explicitly
                 terms = np.arange(1, forecasted_number_years_of_growth + 1)
@@ -381,10 +427,18 @@ class Ticker:
             # and from its ending to eternity
             first_long_term = last_short_term * long_term_q
             if long_growth_duration < 0:
-                sum_discounted_fcf_long_term = first_long_term / (discount_rate - forcasted_long_term_growth_rate)
+                if long_term_q >= 1:  # edge cases
+                    sum_discounted_fcf_long_term = np.sign(first_long_term)*np.inf
+                elif long_term_q <= -1:
+                    sum_discounted_fcf_long_term = np.nan
+                else:
+                    sum_discounted_fcf_long_term = first_long_term / (discount_rate - forcasted_long_term_growth_rate)
             else:  # (a1-an*q)/(1-q)
                 last_long_term_times_q = last_short_term * long_term_q ** (long_growth_duration + 1)
-                sum_discounted_fcf_long_term = (first_long_term - last_long_term_times_q) / (1 - long_term_q)
+                if long_term_q == 1:  # discontinuity point
+                    sum_discounted_fcf_long_term = first_long_term * long_growth_duration
+                else:
+                    sum_discounted_fcf_long_term = (first_long_term - last_long_term_times_q) / (1 - long_term_q)
 
             intrinsic_value_dcf = (sum_discounted_fcf_short_term + sum_discounted_fcf_long_term) / diluted_shares
             if add_bv:
@@ -396,24 +450,15 @@ class Ticker:
 
         intrinsic_value = calc_npv(discount_rate)
         # calculate the intrinsic rate of return (by dcf model):
-        lg, sg, N = (
-            forcasted_long_term_growth_rate, forcasted_short_term_growth_rate, forecasted_number_years_of_growth)
-        a0, price = (average_annual_free_cash_flow, stock_price)
-        # iteration parameters
-        max_r = 1
-        delta_r = 0.1 / 100
-        best_result = None
-        best_dr = None
-        for dr in range(0, int(1 + max_r / delta_r)):  # todo: move to binary search
-            dr = delta_r * dr
-            if dr in [-1, lg]:
-                continue
-            npv = calc_npv(dr)
-            error = np.abs(npv - price)
-            if (best_result is None) or error < best_result:
-                best_result = error
-                best_dr = dr
-        irr = best_dr * 100
+        if intrinsic_value > 0:   # negative values will prefer high discount (unintuitivly)
+            delta = 0.1/100
+            #start_at = max(forcasted_long_term_growth_rate + delta, 0) if long_growth_duration < 0 else 0  # todo: add negative if not infinite
+            start_at = -0.9
+            if np.isnan(start_at):
+                start_at=0
+            irr = search_growth(calc_npv, stock_price, start_at, 1, delta)
+        else:
+            irr = np.nan
 
         return intrinsic_value, irr
 
@@ -605,6 +650,7 @@ class Ticker:
         fig.set_tight_layout(True)
         fig.suptitle(self.symbol + "({:,.2f}): {:.1f}% L {:.1f}%, {:.1f}".format(
             self.yahoo_info.get_stock_price_now(), *(self.get_irr()), self.get_projected_pe()))
+        fig.canvas.manager.set_window_title(self.symbol)
 
         plt.show()
 
@@ -706,3 +752,7 @@ def format_axis(ax):
     # # rotates and right aligns the x labels, and moves the bottom of the
     # # axes up to make room for them
     # fig.autofmt_xdate()
+
+
+if __name__ == '__main__':
+    Ticker("MAXR", "NYSE").plot_me()
