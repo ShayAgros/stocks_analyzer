@@ -565,14 +565,14 @@ class Ticker:
         dates = self.reports.get_reports_dates(term, add_ttm)
         start_date = dates[0]
         end_date = dates[-1]
-        date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date)
+        date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date, interval="1d")
         return date_vector, price_vector
 
     def get_price_graph_after_report(self, term, add_ttm=False):
         dates = self.reports.get_reports_dates(term, add_ttm)
         start_date = dates[-1]
         end_date = datetime.datetime.now()
-        date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date)
+        date_vector, price_vector = self.yahoo_info.get_stock_price_in_range(start_date, end_date, interval="1d")
         return date_vector, price_vector
 
     def get_price_at_report_dates(self, term, add_ttm=False):
@@ -635,16 +635,20 @@ class Ticker:
         format_axis(ax)
         # label = "price"
         # ax.plot(times, prices, '-', label=label)  # for offline testing
-        ax.plot(*self.get_price_graph('annual', add_ttm=self.reports.has_full_ttm()))
-        ax.plot(*self.get_price_graph_after_report('annual', add_ttm=self.reports.has_full_ttm()))
+        price_times, price_values = self.get_price_graph('annual', add_ttm=self.reports.has_full_ttm())
+        ax.plot(price_times, price_values, '-')
+        new_price_times, new_price_values = self.get_price_graph_after_report('annual', add_ttm=self.reports.has_full_ttm())
+        ax.plot(new_price_times, new_price_values)
         # ax.legend(framealpha=0.4)
 
         # widget
-        rectprops = dict(facecolor='cyan', alpha=0.1)
+        self._price_series = price_values.append(new_price_values)
+        rectprops = dict(facecolor='cyan', alpha=0.15)
         self.widget = matplotlib.widgets.SpanSelector(ax,
                                                       lambda from_date, to_date: self.show_delta(
-                                                          mdates.num2date(from_date), mdates.num2date(to_date)),
-                                                      'horizontal', rectprops=rectprops)
+                                                          mdates.num2date(from_date).replace(tzinfo=None),
+                                                          mdates.num2date(to_date).replace(tzinfo=None)),
+                                                      'horizontal', rectprops=rectprops, useblit=True)
 
         #
         fig.set_tight_layout(True)
@@ -657,8 +661,9 @@ class Ticker:
     def show_delta(self, from_date, to_date):
         """ called by the mpl widget to inspect price growth """
         #  some sort of rounding of the date, think about how to reflect this to the user
-        start_price = self.yahoo_info.get_stock_price_at_date(from_date.day, from_date.month, from_date.year)
-        end_price = self.yahoo_info.get_stock_price_at_date(to_date.day, to_date.month, to_date.year)
+        index = self._price_series.index.unique()
+        start_price = self._price_series.loc[index[index.get_loc(from_date, method="nearest")]]
+        end_price = self._price_series.loc[index[index.get_loc(to_date, method="nearest")]]
         change = (end_price - start_price) / start_price
         # not the real time delta if the market was closed
         days = (to_date - from_date).days

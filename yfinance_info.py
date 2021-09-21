@@ -98,13 +98,14 @@ class YahooInfo:
         # to the requested date
         return self.translate_price(stocks_data.iloc[0]["Close"])
 
-    def get_stock_price_in_range(self, from_date, to_date):
+    def get_stock_price_in_range(self, from_date, to_date, interval="1d"):
         # in case any date isn't cached, fetch the entire date range and cache
         # @return date & price vectors
         # todo: this is only a dummy implementation without caching and without filling weekends
         #   this is for testing the rest of the code
         stocks_data = self.yf_symbol.history(start=from_date + datetime.timedelta(days=1),
-                                             end=to_date + datetime.timedelta(days=1))
+                                             end=to_date + datetime.timedelta(days=1),
+                                             interval=interval)
         times = stocks_data.index
         prices = stocks_data['Close']
         return times, self.translate_price(prices)
