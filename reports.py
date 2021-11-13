@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 
 import requests
-import os.path as path
 from htmldom import htmldom
-import json
-import pandas as pd
-from os import makedirs
 import time
 import re
 import datetime
@@ -128,14 +124,11 @@ def get_number_of_fields(document, searched_field):
 # TODO: catch specific exceptions and not just assume what they are
 class Reports:
 
-    def __parse_fields(self, term, report_name):
+    def __parse_fields(self, term, report_name, response_text):
         """ parse all fields defined in self.fields and insert them into a
         a dictionary """
-        site_file_name = file_format.format(symbol=self.symbol, market=self.market, report_name=report_name, term=term)
-        site_path = path.join(report_dir, site_file_name)
-        with open(site_path) as f:
-            document = htmldom.HtmlDom()
-            document.createDom(f.read())
+        document = htmldom.HtmlDom()
+        document.createDom(response_text)
 
         report_dict = getattr(self, report_name)
         report_dict[term] = dict()
@@ -171,19 +164,16 @@ class Reports:
                             print("Failed to fetch field %s of stock %s. skipping" % (key, self.symbol))
                             store_process_value(term_dict[quarter_name], key, '-')
 
-    def __fetch_url(self, site_url, site_file):
+    def __fetch_url(self, site_url):
         response = requests.request("GET", site_url)
         time.sleep(0.5)
 
         if len(response.text) < 70:
             raise MsnReportsException("MSN Server Error: url {}".format(site_url))
-        with open(site_file, "w") as f:
-            f.write(response.text)
+        return response.text
 
     def __parse_and_save_report(self, term, report_name):
-        site_file_name = file_format.format(symbol=self.symbol, market=self.market, report_name=report_name, term=term)
-        site_path = path.join(report_dir, site_file_name)
-
+        # fixes msn url quirks
         if "." in self.symbol or " " in self.symbol:
             site_symbol = self.symbol.replace(".", "%7CSLA%7C").replace(" ", "%7CSLA%7C")
             site_format = site_for_ticker_with_dot(site_format_dict[self.msn_market])
@@ -192,18 +182,13 @@ class Reports:
         else:
             site_url = site_format_dict[self.msn_market].format(report_name=report_name, term=term, symbol=self.symbol,
                                                                 market=self.msn_market)
-
-        # Didn't parse it yet. Fetch from the web
-        if not path.isfile(site_path):
-            try:
-                makedirs(report_dir, exist_ok=True)
-                self.__fetch_url(site_url, site_path)
-            except:
-                raise MsnReportsException(
-                    "Failed to fetch site symbol: {} market: {} msn market: {}".format(self.symbol, self.market,
-                                                                                       self.msn_market))
-
-        self.__parse_fields(term, report_name)
+        try:
+            response_text = self.__fetch_url(site_url)
+        except:
+            raise MsnReportsException(
+                "Failed to fetch site symbol: {} market: {} msn market: {}".format(self.symbol, self.market,
+                                                                                   self.msn_market))
+        self.__parse_fields(term, report_name, response_text)
 
     def get_reports_ascending(self, term, report_name, add_ttm=False):
         report_dict = getattr(self, report_name)
@@ -265,22 +250,6 @@ class Reports:
     def __init__(self, symbol, market):
         self.symbol = symbol
         self.market = market
-
-        symbol_file_name = cache_file_name.format(symbol=symbol)
-        cache_file = "{}/{}".format(report_dir, symbol_file_name)
-        # exit early if a cached version exists
-        if path.isfile(cache_file):
-            with open(cache_file, "r") as f:
-                data = json.load(f)
-                self.balance_sheet = data['balance_sheet']
-                self.income_statement = data['income_statement']
-                self.cash_flow = data['cash_flow']
-                self.__cached_ttm = data['__cached_ttm']
-
-            return
-
-        # not using cached reports, parse the html reports
-
         try:
             self.msn_market = market_to_msn_market[market]
         except:
@@ -303,12 +272,3 @@ class Reports:
         self.get_ttm("balance_sheet")
         self.get_ttm("income_statement")
         self.get_ttm("cash_flow")
-
-        # cache the parsed reports
-        with open(cache_file, "w") as f:
-            data = dict()
-            data['balance_sheet'] = self.balance_sheet
-            data['income_statement'] = self.income_statement
-            data['cash_flow'] = self.cash_flow
-            data['__cached_ttm'] = self.__cached_ttm
-            json.dump(data, f, indent=4)

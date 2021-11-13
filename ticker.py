@@ -5,12 +5,18 @@ from reports import Reports
 from yfinance_info import YahooInfo
 import numpy as np
 from numpy.polynomial.polynomial import Polynomial
-import json
+import pickle
 import datetime
+import os.path
+import os
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.widgets
 import sys
+
+# Define:
+tickers_dir = "./tickers_cache"
+cache_file_name = "{symbol}-{market}.pkl"
 
 
 class StatisticsException(Exception):
@@ -493,19 +499,44 @@ class Ticker:
                                          self.statistics["basic_discount_ratio"] < -1
                                          )
 
+    @staticmethod
+    def get_cache(symbol, market):
+        symbol_file_name = cache_file_name.format(symbol=symbol, market=market)
+        cache_file = os.path.join(tickers_dir, symbol_file_name)
+
+        def get_seconds_from_now(filename):
+            sec_from_epoch = os.path.getmtime(filename)
+            return datetime.datetime.now().timestamp() - sec_from_epoch
+
+        # if old, ignore cache
+        if not os.path.isfile(cache_file) or get_seconds_from_now(cache_file) > 3600 * 24 * 30:  # 30 days
+            return Ticker(symbol, market)
+        try:
+            with open(cache_file, 'rb') as file:
+                return pickle.load(file)
+        except FileNotFoundError:
+            return Ticker(symbol, market)
+
+    def save_cache(self):
+        symbol_file_name = cache_file_name.format(symbol=self.symbol, market=self.market)
+        cache_file = os.path.join(tickers_dir, symbol_file_name)
+        os.makedirs(tickers_dir, exist_ok=True)
+        with open(cache_file, 'wb') as file:
+            pickle.dump(self, file)
+
     def __init__(self, symbol, market):
 
         self.symbol = symbol.upper()
         self.market = market.upper()
 
-        self.yahoo_info = YahooInfo(self.symbol, market)
+        self.yahoo_info = YahooInfo(self.symbol, self.market)
 
         # This would throw an exception if it fails
         self.reports = Reports(self.symbol, self.market)
 
         self.statistics = {
             # the order here is the order in the csv
-            "name": self.yahoo_info.info["shortName"],
+            "name": self.yahoo_info.info.get("shortName"),
 
             "eps": None,
             "book_value": None,
@@ -544,8 +575,8 @@ class Ticker:
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
             "healthy": None,
             "overvalued": None,
-            "sector": self.yahoo_info.info["sector"],
-            "industry": self.yahoo_info.info["industry"],
+            "sector": self.yahoo_info.info.get("sector"),
+            "industry": self.yahoo_info.info.get("industry"),
             "price on update": None,
             "updated at": None,
             "TTM": None
@@ -558,6 +589,8 @@ class Ticker:
         except Exception as err:
             line = get_exception_line()
             raise StatisticsException(str(err) + " in line: " + str(line))
+
+        self.save_cache()
 
     # Plotting:
 
@@ -760,4 +793,4 @@ def format_axis(ax):
 
 
 if __name__ == '__main__':
-    Ticker("MAXR", "NYSE").plot_me()
+    Ticker.get_cache("MAXR", "NYSE").plot_me()

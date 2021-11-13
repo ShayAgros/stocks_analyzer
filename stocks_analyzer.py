@@ -77,7 +77,7 @@ def create_ticker_worker(ticker_queue_tuple):
         try:
             # print("Fetching data for {symbol}:{market}\n".format(symbol = symbol,
                 # market = market))
-            ticker = Ticker(symbol, market)
+            ticker = Ticker.get_cache(symbol, market)
 
             if ticker.warnings:
                 status.setWarning("Ticker {}:{} has warnings: {}".format(symbol, market, ", ".join(ticker.warnings)))

@@ -78,7 +78,7 @@ class TickersTableView(QTableView):
             # symbol and market array
             symbol, market = header.split(":")
             print(symbol, market)
-            ticker = Ticker(symbol, market)
+            ticker = Ticker.get_cache(symbol, market)
             ticker.plot_me()
         else:
             super().keyPressEvent(e)

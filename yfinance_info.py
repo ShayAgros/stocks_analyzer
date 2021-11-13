@@ -1,9 +1,8 @@
-#/usr/bin/python3
+#!/usr/bin/python3
 
 import yfinance as yf
-import json
-from os import makedirs, path
 import datetime
+
 
 class YfinanceException(Exception):
     """Exceptions that are thrown from the yfinance class. The class is
@@ -11,8 +10,6 @@ class YfinanceException(Exception):
     stock data such as price."""
     pass
 
-yahoo_dir = "./yahoo_files"
-file_format = "{symbol}-yahoo.json"
 
 market_to_yf_market = {
         "NASDAQ"    : None,  # None value will leave the symbol intact
@@ -27,11 +24,6 @@ market_to_yf_market = {
         "TLV"       : "TA",  # Israel
         "KRX"       : "KS",  # Korea
     }
-
-
-def get_seconds_from_now(filename):
-    sec_from_epoch = path.getmtime(filename)
-    return datetime.datetime.now().timestamp() - sec_from_epoch
 
 
 class YahooInfo:
@@ -89,11 +81,6 @@ class YahooInfo:
         # available for this date
         self.stock_prices[date_str] = stocks_data.iloc[0]["Close"]
 
-        # save this data for future uses
-        data = {"info": self.info, "stock_prices": self.stock_prices}
-        with open(self.file_path, "w") as f:
-            json.dump(data, f, indent=4)
-
         # return the first value in the table which is the closest stock price
         # to the requested date
         return self.translate_price(stocks_data.iloc[0]["Close"])
@@ -122,29 +109,9 @@ class YahooInfo:
         else:
             self.symbol = symbol
 
-        file_name = file_format.format(symbol = self.symbol)
-        file_path = path.join(yahoo_dir, file_name)
-
-        self.file_path = file_path
-
         self.yf_symbol = yf.Ticker(self.symbol)
-
-        if not path.isfile(file_path) or get_seconds_from_now(file_path) > 3600 * 24 * 30: # 30 days
-            force_old_data = False
-            try:
-                info = self.yf_symbol.info
-            except:
-                raise YfinanceException("Failed to create yf symbol {} or fetch its info".format(self.symbol))
-
-            makedirs(yahoo_dir, exist_ok=True)
-
-            # initialize stock prices to be an empty dictionary
-            if not force_old_data:
-                data = {"info": info, "stock_prices": dict()}
-                with open(file_path, "w") as f:
-                    json.dump(data, f, indent=4)
-
-        with open(file_path, "r") as f:
-            data = json.load(f)
-            self.info = data["info"]
-            self.stock_prices = data["stock_prices"]
+        try:
+            self.info = self.yf_symbol.info
+            self.stock_prices = dict()
+        except:
+            raise YfinanceException("Failed to create yf symbol {} or fetch its info".format(self.symbol))
