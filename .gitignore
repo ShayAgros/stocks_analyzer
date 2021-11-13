@@ -2,6 +2,7 @@ __pycache__
 .idea
 yahoo_files/
 msn_reports/
+tickers_cache/
 output.csv
 *.csv
 *.txt
