@@ -110,6 +110,11 @@ def create_tickers_from_symbol_names(symbol_list):
     """ Get a list of tuples that contain symbol ticker name and its
         stock exchange. Return a list of class Ticker that represent each of the
         stocks"""
+    symbols_nr = len(symbol_list)
+    symbol_ix   = 0
+    LONGEST_PROGRESS_STRING = len("99.99% [{} / {}]".format(symbols_nr, symbols_nr)) +\
+                              len(Fore.CYAN) * 6
+
     manager = mp.Manager()
     queue   = manager.Queue(len(symbol_list))
     ticker_queue_tuple = [ { "ticker_tuple" : ticker, "queue" : queue }
@@ -124,7 +129,18 @@ def create_tickers_from_symbol_names(symbol_list):
                 if not status_item.isFailed():
                     tickers_list.append(status_item.getTicker())
 
-                print(status_item)
+                symbol_ix = symbol_ix + 1
+                percent = round((symbol_ix / symbols_nr) * 100, 2)
+
+                # create the progress string (multiline to add it color)
+                progress = Fore.CYAN + f"{percent}%" + Fore.RESET
+                progress = progress + " [" + Fore.MAGENTA + str(symbol_ix) + Fore.RESET
+                progress = progress + " / " + Fore.MAGENTA + str(symbols_nr) + Fore.RESET
+                progress = progress + "]"
+
+                progress = progress.ljust(LONGEST_PROGRESS_STRING)
+
+                print(progress, status_item)
 
     return tickers_list
 
