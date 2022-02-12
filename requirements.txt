@@ -6,3 +6,5 @@ numpy
 datetime
 htmldom
 matplotlib
+pyqt5
+colorama
