@@ -5,12 +5,15 @@ from htmldom import htmldom
 import time
 import re
 import datetime
+from pprint import pformat
+
 
 class MsnReportsException(Exception):
     """Exceptions that are thrown from the Reports class. The class is
     responsible for fetching the financial data from MSN. This includes mostly
     financial reports."""
     pass
+
 
 site_format_init = "https://www.msn.com/en-us/money/stockdetailsvnext/financials"
 site_format_dict = {
@@ -25,6 +28,7 @@ site_format_dict = {
     "STO": site_format_init + "/{report_name}/{term}/fi-170.1.{symbol}.{market}",
     "TAE": site_format_init + "/{report_name}/{term}/fi-292.1.IS-{symbol}.{market}.{symbol}",
     "KRX": site_format_init + "/{report_name}/{term}/fi-141.1.A{symbol}.{market}.{symbol}",
+    "SHE": site_format_init + "/{report_name}/{term}/fi-137.1.{symbol}.{market}",
 }
 site_for_ticker_with_dot = lambda site: site.format(symbol="{tempered_symbol}.{market}", market="{symbol}",
                                                     report_name="{report_name}", term="{term}")  # will work only on standart countries
@@ -44,6 +48,7 @@ market_to_msn_market = {
     "STO": "STO",  # Sweden
     "TLV": "TAE",  # Israel
     "KRX": "KRX",  # Korea
+    "SHE": "SHE",  # Shenzen
 }
 
 num_of_fields = {
@@ -62,7 +67,7 @@ fields = {
         "Total Equity",
         "Goodwill and Other Intangible Assets",
         "Ordinary Shares Outstanding",
-        "Currency Code"
+       # "Currency Code"
     ],
     "income_statement": [
         "Period End Date",
@@ -121,8 +126,102 @@ def get_number_of_fields(document, searched_field):
     return num
 
 
+class BaseReport:
+    def __init__(self, symbol, market):
+        self.symbol = symbol
+        self.market = market
+
+        self.balance_sheet = dict()
+        self.income_statement = dict()
+        self.cash_flow = dict()
+        """
+        self.sheet[annual/quartely][quarter_name][field_name] == float_number; 
+        """
+
+        self.__cached_ttm = dict()
+
+        # self.parse_and_save_reports()
+
+    def finish_init(self):
+        self.get_ttm("balance_sheet")
+        self.get_ttm("income_statement")
+        self.get_ttm("cash_flow")
+
+    def parse_and_save_reports(self):
+        """ fill the dictionaries """
+        raise Exception("Unimplemented method, override in base class and call in __init__")
+
+    def get_reports_ascending(self, term, report_name, add_ttm=False):
+        report_dict = getattr(self, report_name)
+        term_dict = report_dict[term]
+
+        ordered_terms = sorted(term_dict.keys())
+        ordered_reports = [term_dict[t] for t in ordered_terms]
+        if term == "annual" and add_ttm:
+            ordered_reports.append(self.get_ttm(report_name))
+        return ordered_reports
+
+    def get_last_report(self, term, report_name):
+        ordered_reports = self.get_reports_ascending(term, report_name)
+        try:
+            return ordered_reports[-1]
+        except:
+            print("Ticker {}:{}. Parameters: {}, {}".format(self.symbol, self.market,
+                term, report_name))
+            raise
+
+    def get_reports_dates(self, term, add_ttm=False):
+        # it doesnt really matter if we take the dates from a balance_sheet or income_statement:
+        reports_ordered = self.get_reports_ascending(term, 'balance_sheet', add_ttm)
+        dates = [report["Period End Date"] for report in reports_ordered]
+        dates = [datetime.datetime(date["year"], date["month"], date["day"]) for date in dates]
+        return dates
+
+    def get_field_as_list(self, report, term, field, add_ttm=False):
+        return [r[field] for r in self.get_reports_ascending(term, report, add_ttm)]
+
+    def has_full_ttm(self) -> bool:
+        quarters = self.balance_sheet['quarterly'].keys()
+        return len(quarters) >= 4
+
+    def get_ttm(self, report: str) -> dict:
+        """ get the trailing twelve months of data (or less if quarters are missing in the reports) """
+        if hasattr(self.__cached_ttm, report):
+            return self.__cached_ttm[report]
+
+        result = dict()
+        reports = self.get_reports_ascending("quarterly", report)
+        num_of_quarters = len(reports)
+        if num_of_quarters > 4:
+            reports = reports[-4:]
+            num_of_quarters = 4
+        if num_of_quarters < 4:
+            print("unreliable TTM for %s, missing quarters" % self.symbol)
+
+        for field in fields[report]:
+            if field in non_additive_fields:
+                result[field] = reports[-1][field]
+            else:
+                # if we are missing reports, we still want the numbers to be annual-like
+                result[field] = sum([r[field] for r in reports]) * 4 / num_of_quarters
+
+        self.__cached_ttm[report] = result
+        return result
+
+    def __str__(self):
+        result = "{\n"
+        result += "balance_sheet:\n%s,\n" % pformat(self.balance_sheet, indent=4)
+        result += "income_statement:\n%s,\n" % pformat(self.income_statement, indent=4)
+        result += "cash_flow:\n%s,\n" % pformat(self.cash_flow, indent=4)
+        result += "}"
+        return result
+
+
+
+
+
 # TODO: catch specific exceptions and not just assume what they are
-class Reports:
+class Reports(BaseReport):
 
     def __parse_fields(self, term, report_name, response_text):
         """ parse all fields defined in self.fields and insert them into a
@@ -190,77 +289,7 @@ class Reports:
                                                                                    self.msn_market))
         self.__parse_fields(term, report_name, response_text)
 
-    def get_reports_ascending(self, term, report_name, add_ttm=False):
-        report_dict = getattr(self, report_name)
-        term_dict = report_dict[term]
-
-        ordered_terms = sorted(term_dict.keys())
-        ordered_reports = [term_dict[t] for t in ordered_terms]
-        if term == "annual" and add_ttm:
-            ordered_reports.append(self.get_ttm(report_name))
-        return ordered_reports
-
-    def get_last_report(self, term, report_name):
-        ordered_reports = self.get_reports_ascending(term, report_name)
-        try:
-            return ordered_reports[-1]
-        except:
-            print("Ticker {}:{}. Parameters: {}, {}".format(self.symbol, self.market,
-                term, report_name))
-            raise
-
-    def get_reports_dates(self, term, add_ttm=False):
-        # it doesnt really matter if we take the dates from a balance_sheet or income_statement:
-        reports_ordered = self.get_reports_ascending(term, 'balance_sheet', add_ttm)
-        dates = [report["Period End Date"] for report in reports_ordered]
-        dates = [datetime.datetime(date["year"], date["month"], date["day"]) for date in dates]
-        return dates
-
-    def get_field_as_list(self, report, term, field, add_ttm=False):
-        return [r[field] for r in self.get_reports_ascending(term, report, add_ttm)]
-
-    def has_full_ttm(self) -> bool:
-        quarters = self.balance_sheet['quarterly'].keys()
-        return len(quarters) >= 4
-
-    def get_ttm(self, report: str) -> dict:
-        """ get the trailing twelve months of data (or less if quarters are missing in the reports) """
-        if hasattr(self.__cached_ttm, report):
-            return self.__cached_ttm[report]
-
-        result = dict()
-        reports = self.get_reports_ascending("quarterly", report)
-        num_of_quarters = len(reports)
-        if num_of_quarters > 4:
-            reports = reports[-4:]
-            num_of_quarters = 4
-        if num_of_quarters < 4:
-            print("unreliable TTM for %s, missing quarters" % self.symbol)
-
-        for field in fields[report]:
-            if field in non_additive_fields:
-                result[field] = reports[-1][field]
-            else:
-                # if we are missing reports, we still want the numbers to be annual-like
-                result[field] = sum([r[field] for r in reports]) * 4 / num_of_quarters
-
-        self.__cached_ttm[report] = result
-        return result
-
-    def __init__(self, symbol, market):
-        self.symbol = symbol
-        self.market = market
-        try:
-            self.msn_market = market_to_msn_market[market]
-        except:
-            raise MsnReportsException("market {} is not supported for symbol {}".format(market, symbol))
-
-        self.balance_sheet = dict()
-        self.income_statement = dict()
-        self.cash_flow = dict()
-
-        self.__cached_ttm = dict()
-
+    def parse_and_save_reports(self):  # overrides base
         self.__parse_and_save_report("quarterly", "balance_sheet")
         self.__parse_and_save_report("quarterly", "income_statement")
         self.__parse_and_save_report("quarterly", "cash_flow")
@@ -269,6 +298,12 @@ class Reports:
         self.__parse_and_save_report("annual", "income_statement")
         self.__parse_and_save_report("annual", "cash_flow")
 
-        self.get_ttm("balance_sheet")
-        self.get_ttm("income_statement")
-        self.get_ttm("cash_flow")
+    def __init__(self, symbol, market):
+        super().__init__(symbol, market)
+        try:
+            self.msn_market = market_to_msn_market[market]
+        except:
+            raise MsnReportsException("market {} is not supported for symbol {}".format(market, symbol))
+        self.parse_and_save_reports()
+        self.finish_init()
+

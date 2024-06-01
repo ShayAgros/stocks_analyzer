@@ -2,10 +2,13 @@
 import warnings
 
 from reports import Reports
+from yahoo_reports import YReports
 from yfinance_info import YahooInfo
 import numpy as np
+import pandas as pd
 from numpy.polynomial.polynomial import Polynomial
 import pickle
+from pprint import pformat
 import datetime
 import os.path
 import os
@@ -174,7 +177,7 @@ class Ticker:
         # current_ratio
         current_assets = last_quarterly_balance_sheet["Total Current Assets"]
         current_liabilities = last_quarterly_balance_sheet["Total Current Liabilities"]
-        statistics["current_ratio"] = current_assets / current_liabilities
+        statistics["current_ratio"] = current_assets / current_liabilities  # todo check if need to use current debt or current liabilties
 
         # debt_to_equity
         total_debt = last_quarterly_balance_sheet["Current Debt"] + last_quarterly_balance_sheet["Long Term Debt"]
@@ -363,16 +366,15 @@ class Ticker:
         # --- dcf model ---
         statistics["intrinsic_value_dcf"], statistics["irr[%]"] = self._calc_dcf_intrinsic_values()
 
-    def _calc_dcf_intrinsic_values(self,
-                                   discount_rate=10/100,
-                                   use_bv_growth=True,
-                                   add_bv=True,
-                                   forward_to_present=False,
-                                   short_term_is_linear=False,
-                                   long_growth_duration=-1,
-                                   forecasted_number_years_of_growth=8,
-                                   maximal_long_term_growth_rate=3/100
-                                   ):
+    def _get_calc_npv(self,
+                   use_bv_growth=True,
+                   add_bv=True,
+                   forward_to_present=False,
+                   short_term_is_linear=False,
+                   long_growth_duration=-1,
+                   forecasted_number_years_of_growth=8,
+                   maximal_long_term_growth_rate=3/100,
+                   ):
         #
         # --- The Discounted Free Cash Flow Model (according to the youtube course): ---
         #
@@ -383,14 +385,8 @@ class Ticker:
         statistics = self.statistics
         book_value = statistics["book_value"]
         last_annual_date = statistics["updated at"]
-        old_stock_price = statistics["price on update"]
         diluted_shares = statistics["shares (diluted)"]
 
-
-        if forward_to_present:
-            stock_price = self.yahoo_info.get_stock_price_now()
-        else:
-            stock_price = old_stock_price
         if use_bv_growth:
             forcasted_short_term_growth_rate = statistics[
                                                    "bv_growth_rate"] / 100  # how we remove stocks sale from value?
@@ -454,6 +450,25 @@ class Ticker:
                 intrinsic_value_dcf *= (discount_rate + 1) ** years
             return intrinsic_value_dcf
 
+        return calc_npv
+
+    def _calc_dcf_intrinsic_values(self,
+                                   discount_rate=10/100,
+                                   use_bv_growth=True,
+                                   add_bv=True,
+                                   forward_to_present=False,
+                                   short_term_is_linear=False,
+                                   long_growth_duration=-1,
+                                   forecasted_number_years_of_growth=8,
+                                   maximal_long_term_growth_rate=3/100
+                                   ):
+
+        old_stock_price = self.statistics["price on update"]
+        if forward_to_present:
+            stock_price = self.yahoo_info.get_stock_price_now()
+        else:
+            stock_price = old_stock_price
+        calc_npv = self._get_calc_npv()
         intrinsic_value = calc_npv(discount_rate)
         # calculate the intrinsic rate of return (by dcf model):
         if intrinsic_value > 0:   # negative values will prefer high discount (unintuitivly)
@@ -518,11 +533,20 @@ class Ticker:
             return Ticker(symbol, market)
 
     def save_cache(self):
-        symbol_file_name = cache_file_name.format(symbol=self.symbol, market=self.market)
-        cache_file = os.path.join(tickers_dir, symbol_file_name)
-        os.makedirs(tickers_dir, exist_ok=True)
-        with open(cache_file, 'wb') as file:
-            pickle.dump(self, file)
+        try:
+            symbol_file_name = cache_file_name.format(symbol=self.symbol, market=self.market)
+            cache_file = os.path.join(tickers_dir, symbol_file_name)
+            os.makedirs(tickers_dir, exist_ok=True)
+            content = pickle.dumps(self)  # todo remove line. quick fix to fail before an empty file is created. just fix yfinance instead
+            with open(cache_file, 'wb') as file:
+                pickle.dump(self, file)
+        except TypeError:
+            print("Ticker.py: warnning: failed to save cache, probably yf_ticker object")
+
+    def __str__(self):
+        result = "Ticker of %s:%s\n{\n" % (self.symbol, self.market)
+        result += "Statistics:\n%s,\n" % pformat(self.statistics)
+
 
     def __init__(self, symbol, market):
 
@@ -532,7 +556,8 @@ class Ticker:
         self.yahoo_info = YahooInfo(self.symbol, self.market)
 
         # This would throw an exception if it fails
-        self.reports = Reports(self.symbol, self.market)
+        self.reports = YReports(symbol, market, self.yahoo_info.yf_symbol)
+        #self.reports = Reports(self.symbol, self.market)
 
         self.statistics = {
             # the order here is the order in the csv
@@ -675,13 +700,13 @@ class Ticker:
         # ax.legend(framealpha=0.4)
 
         # widget
-        self._price_series = price_values.append(new_price_values)
+        self._price_series = pd.concat([price_values, new_price_values])
         rectprops = dict(facecolor='cyan', alpha=0.15)
         self.widget = matplotlib.widgets.SpanSelector(ax,
                                                       lambda from_date, to_date: self.show_delta(
                                                           mdates.num2date(from_date).replace(tzinfo=None),
                                                           mdates.num2date(to_date).replace(tzinfo=None)),
-                                                      'horizontal', rectprops=rectprops, useblit=True)
+                                                      'horizontal', props=rectprops, useblit=True)
 
         #
         fig.set_tight_layout(True)
@@ -695,8 +720,12 @@ class Ticker:
         """ called by the mpl widget to inspect price growth """
         #  some sort of rounding of the date, think about how to reflect this to the user
         index = self._price_series.index.unique()
-        start_price = self._price_series.loc[index[index.get_loc(from_date, method="nearest")]]
-        end_price = self._price_series.loc[index[index.get_loc(to_date, method="nearest")]]
+        # set timezone to allow comparing with the index
+        timezone = index.tzinfo
+        from_date = timezone.localize(from_date)
+        to_date = timezone.localize(to_date)
+        start_price = self._price_series.loc[index[index.get_indexer([from_date], method="nearest")]][0]
+        end_price = self._price_series.loc[index[index.get_indexer([to_date], method="nearest")]][0]
         change = (end_price - start_price) / start_price
         # not the real time delta if the market was closed
         days = (to_date - from_date).days
@@ -793,4 +822,4 @@ def format_axis(ax):
 
 
 if __name__ == '__main__':
-    Ticker.get_cache("MAXR", "NYSE").plot_me()
+    Ticker.get_cache("FB", "NASDAQ").plot_me()
