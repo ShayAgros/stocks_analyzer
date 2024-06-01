@@ -95,6 +95,7 @@ def create_ticker_worker(ticker_queue_tuple):
         #todo ugly workaround, might break future calculations
         if status.ticker:
             status.ticker.yahoo_info.yf_symbol = None
+            status.ticker.reports.yf_ticker = None
 
         try:
             status_queue.put(status)
