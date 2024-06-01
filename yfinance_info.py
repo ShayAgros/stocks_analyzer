@@ -23,7 +23,21 @@ market_to_yf_market = {
         "STO"       : "ST",  # Sweden
         "TLV"       : "TA",  # Israel
         "KRX"       : "KS",  # Korea
+        "SHE"       : "SZ",
     }
+
+def get_ticker_from_standard_symbols(symbol:str, market:str):
+    full_symbol = symbol.replace('.', '-').replace(' ', '-')  # for tickers like "brk.b"
+
+    if market not in market_to_yf_market.keys():
+        raise YfinanceException("unrecognised market")
+
+    market_endian = market_to_yf_market[market]
+    if market_endian is not None:
+        full_symbol = full_symbol + "." + market_endian
+    else:
+        full_symbol = full_symbol
+    return full_symbol, market_endian
 
 
 class YahooInfo:
@@ -38,7 +52,7 @@ class YahooInfo:
         """Get the current stock price, or, if the market is closed, the closing price,
         without caching, as the price continue to change"""
         todays_data = self.yf_symbol.history(period='1d')
-        return self.translate_price(todays_data['Close'][0])
+        return self.translate_price(todays_data['Close'].iloc[0])
 
     def get_stock_price_at_date(self, day, month, year):
         """Get the stock price at the given date, or the closet after it if the
@@ -61,8 +75,7 @@ class YahooInfo:
         #                  Open      High        Low      Close    Volume  Dividends  Stock Splits
         # Date                                                                                    
         # 2018-03-14  91.601436  91.88071  90.041359  90.378410  32132000          0             0
-        stocks_data = self.yf_symbol.history(start = date, end = next_date,
-                debug = False)
+        stocks_data = self.yf_symbol.history(start = date, end = next_date) #,debug = False)
 
         # to stock data at date. Cache and return 'NaN'
         if not len(stocks_data):
@@ -98,20 +111,32 @@ class YahooInfo:
         return times, self.translate_price(prices)
 
     def __init__(self, symbol, market):
-        symbol = symbol.replace('.', '-').replace(' ', '-')  # for tickers like "brk.b"
-
-        if market not in market_to_yf_market.keys():
-            raise YfinanceException("unrecognised market")
-
-        self.market_endian = market_to_yf_market[market]
-        if self.market_endian is not None:
-            self.symbol = symbol + "." + self.market_endian
-        else:
-            self.symbol = symbol
-
-        self.yf_symbol = yf.Ticker(self.symbol)
+        self.full_symbol, self.market_endian = get_ticker_from_standard_symbols(symbol, market)
+        self.yf_symbol = yf.Ticker(self.full_symbol)
         try:
             self.info = self.yf_symbol.info
             self.stock_prices = dict()
         except:
-            raise YfinanceException("Failed to create yf symbol {} or fetch its info".format(self.symbol))
+            raise YfinanceException("Failed to create yf symbol {} or fetch its info".format(self.full_symbol))
+
+    def get_monthly_growths(self, amount=60):
+        """
+        TODO: return vectors of dates, weight(price), growth(divided by price) - will be used by portfolio volatility analysis
+        should cache the result?
+        should take into account splits and dividends(will be added to the monthly growth)
+        """
+        pass
+
+
+
+
+if __name__ == '__main__':  # test index
+    import matplotlib.pyplot as plt
+    y = YahooInfo('%5EGSPC', 'NYSE')  # S&P500
+    fig = plt.figure()
+    end_date = datetime.datetime.now()
+    start_date = end_date - datetime.timedelta(days=(365.25*4))
+    date_vector, price_vector = y.get_stock_price_in_range(start_date, end_date, interval="1d")
+    plt.plot(date_vector, price_vector, '-')
+    plt.show()
+

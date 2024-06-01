@@ -3,7 +3,17 @@ from ticker import search_growth
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
+from sys import stdout
 
+"""
+Calculate your average portfolio's growth, and compare it to an index
+*   supports indices inside the table (with yahoo's unintuitive names)
+*   does not include currency conversion/taxes/etc...
+*   file can have blank lines & commented-out ones
+
+Table Format (tab separated):
+Ticker	Market	Date	Amount	BuyNotSell	Cost
+"""
 
 sep  = "\t"
 comment = "#"
@@ -13,7 +23,7 @@ read_tsv = lambda file: pd.read_csv(file, sep=sep, comment=comment, skip_blank_l
 
 def get_get_npv(table):  # will return the lambda function
     # time which had passed for each transaction
-    duration = (pd.Timestamp.now().normalize() - pd.to_datetime(table["Date"], format=frmt)) / np.timedelta64(1, "Y")
+    duration = (pd.Timestamp.now().normalize() - pd.to_datetime(table["Date"], format=frmt)) / np.timedelta64(365, "D")
     # current price
     market_value = np.array([YahooInfo(row[1]["Ticker"], row[1]["Market"]).get_stock_price_now() for row in table.iterrows()])
     # buy\sell sign
@@ -27,6 +37,10 @@ def get_get_npv(table):  # will return the lambda function
     # more stats
     profitable = (portfolio_value - money_invested.sum()) >= 0  # will be used to limit the search range
     return profitable, portfolio_value, money_invested.sum(), get_npv
+
+
+def get_get_future_npv(table):
+    pass  # todo will call all ticker.get_calc_npv()
 
 
 def get_performance(table):
@@ -44,12 +58,36 @@ def get_performance(table):
     )
 
 
+def get_index(table):
+    """ a similiar table for investing the money in an index instead """
+    index_name = "NASDAQ-100"  # informative name
+    index_market = "NASDAQ"
+    index_yahoo_name = "^IXIC".replace("^", "%5E")
+
+    idx = YahooInfo(index_yahoo_name, index_market)
+    table = table.copy()
+    dates = pd.to_datetime(table["Date"], format=frmt)
+    idx_prices = [idx.get_stock_price_at_date(date.day, date.month, date.year) for date in dates]
+    adjusted_amount = table["Amount"] * table["Cost"] / idx_prices
+    table["Cost"] = idx_prices
+    table["Amount"] = adjusted_amount
+    table["Ticker"] = index_yahoo_name
+    table["Market"] = index_market
+    return index_name, table
+
+# Future estimate:
+
+
+
 if __name__ == '__main__':
     file = "Portfolio1.tsv"
     table = read_tsv(file)
-    #print(table["Date"].array)
-    #print(get_npv(table, 0.1))
     print("Portfolio performed annually at: %.2f%%" % get_performance(table))
+    stdout.flush()
+
+    index_name, index_table = get_index(table)
+    print("\nSimulated investment in %s gives:" % index_name)
+    print("Index performed annually at: %.2f%%" % get_performance(index_table))
 
 
 
