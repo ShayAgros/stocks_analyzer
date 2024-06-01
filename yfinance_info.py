@@ -51,7 +51,7 @@ class YahooInfo:
     def get_stock_price_now(self):
         """Get the current stock price, or, if the market is closed, the closing price,
         without caching, as the price continue to change"""
-        todays_data = self.yf_symbol.history(period='1d')
+        todays_data = self.yf_ticker.history(period='1d')
         return self.translate_price(todays_data['Close'].iloc[0])
 
     def get_stock_price_at_date(self, day, month, year):
@@ -75,7 +75,7 @@ class YahooInfo:
         #                  Open      High        Low      Close    Volume  Dividends  Stock Splits
         # Date                                                                                    
         # 2018-03-14  91.601436  91.88071  90.041359  90.378410  32132000          0             0
-        stocks_data = self.yf_symbol.history(start = date, end = next_date) #,debug = False)
+        stocks_data = self.yf_ticker.history(start = date, end = next_date) #,debug = False)
 
         # to stock data at date. Cache and return 'NaN'
         if not len(stocks_data):
@@ -103,18 +103,24 @@ class YahooInfo:
         # @return date & price vectors
         # todo: this is only a dummy implementation without caching and without filling weekends
         #   this is for testing the rest of the code
-        stocks_data = self.yf_symbol.history(start=from_date + datetime.timedelta(days=1),
+        stocks_data = self.yf_ticker.history(start=from_date + datetime.timedelta(days=1),
                                              end=to_date + datetime.timedelta(days=1),
                                              interval=interval)
         times = stocks_data.index
         prices = stocks_data['Close']
         return times, self.translate_price(prices)
 
+    def pre_pickle(self):
+        self.yf_ticker = None
+
+    def post_pickle(self):
+        self.yf_ticker = yf.Ticker(self.full_symbol)
+
     def __init__(self, symbol, market):
         self.full_symbol, self.market_endian = get_ticker_from_standard_symbols(symbol, market)
-        self.yf_symbol = yf.Ticker(self.full_symbol)
+        self.yf_ticker = yf.Ticker(self.full_symbol)
         try:
-            self.info = self.yf_symbol.info
+            self.info = self.yf_ticker.info
             self.stock_prices = dict()
         except:
             raise YfinanceException("Failed to create yf symbol {} or fetch its info".format(self.full_symbol))

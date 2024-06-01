@@ -92,10 +92,9 @@ def create_ticker_worker(ticker_queue_tuple):
         except Exception as err:
             status.setFailure("Failed in an unknown location. error: {}".format(err))
 
-        #todo ugly workaround, might break future calculations
+        #todo if inner fields are needed, call post_pickle at the other side
         if status.ticker:
-            status.ticker.yahoo_info.yf_symbol = None
-            status.ticker.reports.yf_ticker = None
+            status.ticker.pre_pickle()
 
         try:
             status_queue.put(status)

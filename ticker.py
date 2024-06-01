@@ -528,17 +528,27 @@ class Ticker:
             return Ticker(symbol, market)
         try:
             with open(cache_file, 'rb') as file:
-                return pickle.load(file)
+                return pickle.load(file).post_pickle()
         except FileNotFoundError:
             return Ticker(symbol, market)
+
+
+    def pre_pickle(self):
+        self.reports.pre_pickle()
+        self.yahoo_info.pre_pickle()
+
+    def post_pickle(self):
+        self.yahoo_info.post_pickle()
+        self.reports.post_pickle(self.yahoo_info.yf_ticker)
+        return self
 
     def save_cache(self):
         try:
             symbol_file_name = cache_file_name.format(symbol=self.symbol, market=self.market)
             cache_file = os.path.join(tickers_dir, symbol_file_name)
             os.makedirs(tickers_dir, exist_ok=True)
-            content = pickle.dumps(self)  # todo remove line. quick fix to fail before an empty file is created. just fix yfinance instead
             with open(cache_file, 'wb') as file:
+                self.pre_pickle()
                 pickle.dump(self, file)
         except TypeError:
             print("Ticker.py: warnning: failed to save cache, probably yf_ticker object")
@@ -556,7 +566,7 @@ class Ticker:
         self.yahoo_info = YahooInfo(self.symbol, self.market)
 
         # This would throw an exception if it fails
-        self.reports = YReports(symbol, market, self.yahoo_info.yf_symbol)
+        self.reports = YReports(symbol, market, self.yahoo_info.yf_ticker)
         #self.reports = Reports(self.symbol, self.market)
 
         self.statistics = {

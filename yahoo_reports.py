@@ -51,12 +51,19 @@ class YReports(BaseReport):
     def __init__(self, symbol:str, market:str, yf_ticker:yf.Ticker = None):
         super().__init__(symbol, market)
         self.full_symbol, self.market_endian = get_ticker_from_standard_symbols(symbol, market)
+        self.yf_ticker = None
+        self.post_pickle(yf_ticker=yf_ticker)
+        self.parse_and_save_reports()
+        self.finish_init()
+
+    def pre_pickle(self):
+        self.yf_ticker = None
+
+    def post_pickle(self, yf_ticker:yf.Ticker = None):
         if yf_ticker is not None:
             self.yf_ticker = yf_ticker
         else:
             self.yf_ticker = yf.Ticker(self.full_symbol)
-        self.parse_and_save_reports()
-        self.finish_init()
 
     def parse_and_save_reports(self):
         # todo finish
