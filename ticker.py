@@ -134,6 +134,7 @@ class Ticker:
         dividends = (-last_yearly_cash_flow["Common Stock Dividends Paid"]) / last_yearly_balance_sheet[
             "Ordinary Shares Outstanding"]
         statistics["dividends"] = dividends
+        if np.isnan(dividends): dividends = 0
 
         # delta_book_value
         indicies = (-3, -2) if use_ttm else (-2, -1)  # we ignore the ttm
@@ -165,11 +166,15 @@ class Ticker:
 
         # pe * bv
         price_to_book_value = statistics["price_to_book"]
-        statistics["pe*bv"] = pe_ratio * price_to_book_value
+        statistics["pe*bv"] = max(pe_ratio, 0) * price_to_book_value
 
         # ROE
         return_on_equity = 100 * eps / book_value
         statistics["roe[%]"] = return_on_equity
+
+        # ROA
+        return_on_assets = 100 * earnings / last_quarterly_balance_sheet["Total Assets"]
+        statistics["roa[%]"] = return_on_assets
 
         # price_to_operating_cf_ratio
         statistics["pocf_ratio"] = stock_price / statistics["operating_cfps"]
@@ -187,7 +192,7 @@ class Ticker:
         statistics["market_cap"] = stock_price * shares_outstanding  # take the most updated number (quarterly)
 
         # naive time to profit
-        statistics["naive_time_to_profit"] = (stock_price - book_value) / eps
+        statistics["naive_time_to_profit"] = (stock_price - book_value) / eps if eps > 0 else np.nan
 
         self._calculate_trends(all_yearly_income_statements,
                                all_yearly_balance_sheets,
@@ -197,6 +202,7 @@ class Ticker:
                                          stock_price,
                                          annual_dates[-1])
         self._calculate_quick_filter()
+        self._round()
 
     def _calculate_trends(self, all_yearly_income_statements,
                           all_yearly_balance_sheets, all_yearly_cash_flows, annual_dates):
@@ -217,7 +223,7 @@ class Ticker:
         statistics = self.statistics
         years = Ticker.__calculate_year_diff(annual_dates)
 
-        # earnings trend (total, not per-stock)
+        # earnings trend (slope) (total, not per-stock)
         yearly_earnings = [statement["Net Income"] for statement in all_yearly_income_statements]
         poly_fit = Polynomial.fit(years, yearly_earnings, deg=1)
         earnings_fit = poly_fit.coef  # TODO: --- check what changed when I removed the .convert() ---
@@ -471,7 +477,7 @@ class Ticker:
         calc_npv = self._get_calc_npv()
         intrinsic_value = calc_npv(discount_rate)
         # calculate the intrinsic rate of return (by dcf model):
-        if intrinsic_value > 0:   # negative values will prefer high discount (unintuitivly)
+        if intrinsic_value > 0 and self.statistics["eps"] > 0:   # negative values will prefer high discount (unintuitivly)
             delta = 0.1/100
             #start_at = max(forcasted_long_term_growth_rate + delta, 0) if long_growth_duration < 0 else 0  # todo: add negative if not infinite
             start_at = -0.9
@@ -503,6 +509,7 @@ class Ticker:
                                       self.statistics["maximal_non_operating_cf"] < 0 and  # too restrictive
                                       self.statistics["minimal_operating_cf"] > 0 and
                                       self.statistics["roe[%]"] >= 10 and
+                                      self.statistics["roa[%]"] >= 3 and
                                       self.statistics["growth_rate"] >= 2.5 and
                                       self.statistics["bv_growth_rate"] >= 2.5 and
                                       self.statistics["revenue_growth_rate"] >= 1.7
@@ -573,13 +580,12 @@ class Ticker:
             # the order here is the order in the csv
             "name": self.yahoo_info.info.get("shortName"),
 
-            "eps": None,
-            "book_value": None,
             "price_to_book": None,
             "pe_ratio": None,
             "ep_ratio[%]": None,
             "pe*bv": None,
             "roe[%]": None,
+            "roa[%]": None,
             "peg_ratio": None,
             "operating_cfps": None,
             "non_operating_cfps": None,
@@ -613,6 +619,8 @@ class Ticker:
             "sector": self.yahoo_info.info.get("sector"),
             "industry": self.yahoo_info.info.get("industry"),
             "price on update": None,
+            "eps": None,
+            "book_value": None,
             "updated at": None,
             "TTM": None
         }
@@ -809,6 +817,11 @@ class Ticker:
         print("")
         print("old_yearly_pe_ratio:    " + str(old_yearly_pe_ratio))
         print("old_quarterly_pe_ratio: " + str(old_quarterly_pe_ratio))
+
+    def _round(self, digits=2):
+        for key, value in self.statistics.items():
+            if np.issubdtype(type(value), np.floating):
+                self.statistics[key] = np.round(value, digits)
 
 
 def format_axis(ax):

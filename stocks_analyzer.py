@@ -228,9 +228,27 @@ def create_tickers_from_file(file_path):
     return create_tickers_from_symbol_names(symbol_list)
 
 
+tldr_statistics = [  # a less overwhelming set of statistics
+            "name",
+            "pe_ratio",
+            "price_to_book",
+            "pe*bv",
+            "peg_ratio",
+            "irr[%]",
+            "intrinsic_value_dcf",
+            "naive_time_to_profit",
+            "basic_discount_ratio",
+            "current_ratio",
+            "growth_rate",
+            "bv_growth_rate",
+            "revenue_growth_rate",
+            "healthy",
+            "overvalued",
+            "updated at",
+        ]
+
+
 def main():
-
-
     warnings.simplefilter('error')
 
     # 1) Create 'Ticker' variable for every symbol
@@ -244,8 +262,11 @@ def main():
     my_stocks_file = russel_file if use_russel else my_stocks_file
 
     csv_path = ".".join(my_stocks_file.split(".")[:-1]) + "_statistics.csv"
+    tldr_path = ".".join(my_stocks_file.split(".")[:-1]) + "_statistics_tldr.csv"
     try:  # alert the user while still have time
         with open(csv_path, 'a+'):
+            pass
+        with open(tldr_path, 'a+'):
             pass
     except PermissionError:
         print("Close Excel!")
@@ -258,6 +279,7 @@ def main():
     # tickers = filter(filtering_function, tickers)
     # tickers = sort_stocks_by_fields(tickers, [["book_value", True], ["eps", True]])
     stocks_list_to_csv(tickers, csv_path)
+    stocks_list_to_csv(tickers, tldr_path, show_fields=tldr_statistics)
 
 
 if __name__ == '__main__':
