@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import warnings
 
+from pypfopt import EfficientFrontier, plotting
+
 from reports import Reports
 from yahoo_reports import YReports
-from yfinance_info import YahooInfo
+from yfinance_info import YahooInfo, YahooGroup
 import numpy as np
 import pandas as pd
 from numpy.polynomial.polynomial import Polynomial
@@ -21,6 +23,7 @@ import sys
 tickers_dir = "./tickers_cache"
 cache_file_name = "{symbol}-{market}.pkl"
 
+forcast_growth_field = "irr[%]"  # todo, make it dynamic
 
 class StatisticsException(Exception):
     """Exceptions that are thrown during the Ticker statistics calculation.
@@ -371,6 +374,7 @@ class Ticker:
 
         # --- dcf model ---
         statistics["intrinsic_value_dcf"], statistics["irr[%]"] = self._calc_dcf_intrinsic_values()
+        statistics["dcf_discount_ratio"] = 100 * (statistics["intrinsic_value_dcf"] - stock_price) / stock_price
 
     def _get_calc_npv(self,
                    use_bv_growth=True,
@@ -593,6 +597,7 @@ class Ticker:
             "basic_discount_value": None,
             "basic_discount_ratio": None,
             "intrinsic_value_dcf": None,
+            "dcf_discount_ratio": None,
             "irr[%]": None,
             "current_ratio": None,
             "debt_to_equity": None,
@@ -634,6 +639,9 @@ class Ticker:
             raise StatisticsException(str(err) + " in line: " + str(line))
 
         self.save_cache()
+
+    def get_forecasted_annual_growth(self):
+        return self.statistics[forcast_growth_field]/100  # assume field is annual and in percents
 
     # Plotting:
 
@@ -844,5 +852,38 @@ def format_axis(ax):
     # fig.autofmt_xdate()
 
 
+""" --- Portfolios: --- """
+
+known_index_symbols = ["%5EGSPC",]  # in yahoo format, not universal one, these will not have a ticker
+class TickerGroup(YahooGroup):
+    def __init__(self, symbols:list, markets:list):
+        super().__init__(symbols, markets)
+        self.symbols = symbols
+        self.markets = markets
+        self.tickers_dictionary = dict()  # todo: dict[(symbol,market)] will hold the ticker, will be used for get_forcasted_monthly_growth(), otherwise use past growth
+        self.annual_growth_forecasts = list()
+        print("recreating tickers and calculating growth")  # todo optimize runtime
+        for symbol, market in zip(symbols, markets):
+            if symbol not in known_index_symbols:
+                self.tickers_dictionary[(symbol,market)] = Ticker(symbol,market)
+                self.annual_growth_forecasts.append(self.tickers_dictionary[(symbol,market)].get_forecasted_annual_growth())
+            else:
+                self.annual_growth_forecasts.append(self.get_past_annual_performance(symbol,market))
+        print("calc cov")
+        cov = self.get_cov()
+        print("EF")
+        self.efficient_frontier = EfficientFrontier(self.annual_growth_forecasts, cov)
+
+    def plot_frontier(self):
+        fig, ax = plt.subplots()
+        plotting.plot_efficient_frontier(self.efficient_frontier, ax=ax, show_assets=True)
+        plt.show()
+
+
+class WeightedPortfolio:
+    pass
+
+
+
 if __name__ == '__main__':
-    Ticker.get_cache("FB", "NASDAQ").plot_me()
+    Ticker.get_cache("AVGO", "NASDAQ").plot_me()

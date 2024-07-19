@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-from ticker import Ticker, StatisticsException
+from ticker import Ticker, StatisticsException, TickerGroup
 from yfinance_info import YfinanceException
 from reports import MsnReportsException
 import pandas as pd
 import warnings
 import sys
 from time import sleep
+from os.path import basename
 
 import multiprocessing as mp
 
@@ -209,6 +210,7 @@ def stocks_list_to_csv(tickers_list, out_path, show_fields=None, max_count=None,
         print("CSV file is opened.\nPlease close the Excel app...\nThis is the last chance")
         sleep(6)
         df.to_csv(out_path)
+    return df
 
 
 def create_tickers_from_file(file_path):
@@ -225,7 +227,7 @@ def create_tickers_from_file(file_path):
             line_attr = (" ".join(line_attr[:-1]), line_attr[-1])  # allow spaces in ticker name
             symbol_list.append(line_attr)
 
-    return create_tickers_from_symbol_names(symbol_list)
+    return create_tickers_from_symbol_names(symbol_list), symbol_list
 
 
 tldr_statistics = [  # a less overwhelming set of statistics
@@ -235,9 +237,9 @@ tldr_statistics = [  # a less overwhelming set of statistics
             "pe*bv",
             "peg_ratio",
             "irr[%]",
-            "intrinsic_value_dcf",
             "naive_time_to_profit",
             "basic_discount_ratio",
+            "dcf_discount_ratio",
             "current_ratio",
             "growth_rate",
             "bv_growth_rate",
@@ -257,12 +259,12 @@ def main():
     # 4) Save in a csv file
     use_russel = not True
 
-    my_stocks_file = "my_stocks.txt"
-    russel_file = "russel_formated.txt"
+    my_stocks_file = "inputs/my_stocks.txt"
+    russel_file = "inputs/russel_formated.txt"
     my_stocks_file = russel_file if use_russel else my_stocks_file
 
-    csv_path = ".".join(my_stocks_file.split(".")[:-1]) + "_statistics.csv"
-    tldr_path = ".".join(my_stocks_file.split(".")[:-1]) + "_statistics_tldr.csv"
+    csv_path  = ".".join(basename(my_stocks_file).split(".")[:-1]) + "_statistics.csv"
+    tldr_path = ".".join(basename(my_stocks_file).split(".")[:-1]) + "_statistics_tldr.csv"
     try:  # alert the user while still have time
         with open(csv_path, 'a+'):
             pass
@@ -272,14 +274,27 @@ def main():
         print("Close Excel!")
         sleep(3)
 
-    tickers = create_tickers_from_file(my_stocks_file)
+    tickers, ids = create_tickers_from_file(my_stocks_file)
 
     # filtering_function =
     #   lambda stock: filter_stocks_by_fields(stock, [["eps", 3, False], ["sector", "Technology"]])
     # tickers = filter(filtering_function, tickers)
     # tickers = sort_stocks_by_fields(tickers, [["book_value", True], ["eps", True]])
-    stocks_list_to_csv(tickers, csv_path)
+    df = stocks_list_to_csv(tickers, csv_path)
     stocks_list_to_csv(tickers, tldr_path, show_fields=tldr_statistics)
+
+    # optimizer:
+    print("starting our optimizer")
+    symbols = list()
+    markets = list()
+    for i, (symbol, market) in enumerate(ids):  # take only succesfull ones, to avoid error handling
+        if symbol in df.index and 0 < df["irr[%]"][symbol] < 95:
+            symbols.append(symbol)
+            markets.append(market)
+    portfolio_optimizer = TickerGroup(symbols, markets)
+    print("plotting")
+    portfolio_optimizer.plot_frontier()
+
 
 
 if __name__ == '__main__':

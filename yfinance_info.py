@@ -125,13 +125,40 @@ class YahooInfo:
         except:
             raise YfinanceException("Failed to create yf symbol {} or fetch its info".format(self.full_symbol))
 
-    def get_monthly_growths(self, amount=60):
+
+
+class YahooGroup:
+    """ Get prices synchronised. tested only with same currency """
+    def __init__(self, symbols: list, markets: list):
+        self.full_symbols = list()
+        self.history = None
+        for i in range(len(symbols)):
+            self.full_symbols.append(get_ticker_from_standard_symbols(symbols[i], markets[i])[0])
+        self.yf_ticker = yf.Tickers(" ".join(self.full_symbols))
+        self.get_monthly_prices()  #
+
+    def get_monthly_prices(self) -> None:
         """
         TODO: return vectors of dates, weight(price), growth(divided by price) - will be used by portfolio volatility analysis
         should cache the result?
         should take into account splits and dividends(will be added to the monthly growth)
         """
-        pass
+        if self.history is None:
+            self.history = self.yf_ticker.history(period="10y")["Close"].iloc[::30]  # todo better implement period & interval (more years and real months?, maybe add overlaps)
+
+    def get_monthly_growths(self):
+        p1 = self.history[1:]
+        p0 = self.history[:-1]
+        p0.index = p1.index
+        return (p1 - p0) / p0
+
+    def get_past_annual_performance(self, symbol, market, is_yahoo=False):
+        full_symbol = symbol if is_yahoo else get_ticker_from_standard_symbols(symbol,market)[0]
+        return self.get_monthly_growths()[full_symbol].mean()
+
+    def get_cov(self):
+        return self.get_monthly_growths().cov().values
+
 
 
 
