@@ -14,5 +14,5 @@ def calc_yield_to_maturity(face_value, coupon, time_to_maturity, time_to_first_c
         price=price,
         min_growth=0,
         max_growth=5,
-        delta_growth=0.1 / 100
+        delta_growth=0.01 / 100
     )
