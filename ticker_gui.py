@@ -56,7 +56,7 @@ class tickers_gui(QWidget):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
-    tickers = stocks_analyzer.create_tickers_from_file('./russel_formated_first_50.txt')
+    tickers = stocks_analyzer.create_tickers_from_file('inputs/my_stocks.txt')
 
 
     d = {(f"{ticker.symbol}:{ticker.market}" ): ticker.statistics.values() for ticker in tickers}

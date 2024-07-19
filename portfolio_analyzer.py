@@ -80,7 +80,7 @@ def get_index(table):
 
 
 if __name__ == '__main__':
-    file = "Portfolio1.tsv"
+    file = "inputs/Portfolio1.tsv"
     table = read_tsv(file)
     print("Portfolio performed annually at: %.2f%%" % get_performance(table))
     stdout.flush()
