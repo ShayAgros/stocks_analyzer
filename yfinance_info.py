@@ -154,10 +154,21 @@ class YahooGroup:
 
     def get_past_annual_performance(self, symbol, market, is_yahoo=False):
         full_symbol = symbol if is_yahoo else get_ticker_from_standard_symbols(symbol,market)[0]
-        return self.get_monthly_growths()[full_symbol].mean()
+        monthly = self.get_monthly_growths()[full_symbol].mean()
+        return (1 + monthly) ** 12 - 1
 
     def get_cov(self):
-        return self.get_monthly_growths().cov().values
+        return self.get_monthly_growths().cov().values * 12  # multiply by 12 to convert from monthly to annual variance
+
+    # -----------------------------------------------------------------------------
+
+    def get_stock_prices_now(self):
+        """Get the current stock price, or, if the market is closed, the closing price,
+        without caching, as the price continue to change"""
+        todays_data = self.yf_ticker.history(period='1d')
+        return todays_data['Close'].iloc[0]
+
+
 
 
 
@@ -166,6 +177,7 @@ class YahooGroup:
 if __name__ == '__main__':  # test index
     import matplotlib.pyplot as plt
     y = YahooInfo('%5EGSPC', 'NYSE')  # S&P500
+    y2 = YahooInfo("MSFT","NASDAQ")
     fig = plt.figure()
     end_date = datetime.datetime.now()
     start_date = end_date - datetime.timedelta(days=(365.25*4))

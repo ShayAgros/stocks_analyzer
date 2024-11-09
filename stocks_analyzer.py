@@ -257,7 +257,10 @@ def main():
     # 2) store result in some list
     # 3) Do something with the Ticker's list
     # 4) Save in a csv file
-    use_russel = not True
+    use_russel   = False
+    run_optimize = True
+    filter_non_healthy = True
+    risk_free_rate = 4 / 100
 
     my_stocks_file = "inputs/my_stocks.txt"
     russel_file = "inputs/russel_formated.txt"
@@ -284,16 +287,18 @@ def main():
     stocks_list_to_csv(tickers, tldr_path, show_fields=tldr_statistics)
 
     # optimizer:
-    print("starting our optimizer")
-    symbols = list()
-    markets = list()
-    for i, (symbol, market) in enumerate(ids):  # take only succesfull ones, to avoid error handling
-        if symbol in df.index and 0 < df["irr[%]"][symbol] < 95:
-            symbols.append(symbol)
-            markets.append(market)
-    portfolio_optimizer = TickerGroup(symbols, markets)
-    print("plotting")
-    portfolio_optimizer.plot_frontier()
+    if run_optimize:
+        print("starting our optimizer")
+        symbols = list()
+        markets = list()
+        for i, (symbol, market) in enumerate(ids):  # take only successful ones, to avoid error handling
+            if symbol in df.index and (0 < df["irr[%]"][symbol] < 95) and (not filter_non_healthy or df["healthy"][symbol] == True):
+                symbols.append(symbol)
+                markets.append(market)
+        existing_tickers = {(ticker.symbol, ticker.market): ticker for ticker in tickers}
+        portfolio_optimizer = TickerGroup(symbols, markets, risk_free_rate=risk_free_rate, existing_tickers=existing_tickers)
+        print("plotting")
+        portfolio_optimizer.optimize()
 
 
 

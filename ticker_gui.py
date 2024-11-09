@@ -59,9 +59,9 @@ if __name__ == '__main__':
     tickers = stocks_analyzer.create_tickers_from_file('inputs/my_stocks.txt')
 
 
-    d = {(f"{ticker.symbol}:{ticker.market}" ): ticker.statistics.values() for ticker in tickers}
+    d = {(f"{ticker.symbol}:{ticker.market}" ): ticker.statistics.values() for ticker in tickers[0]}
     # ---- As Dataframe: ----
-    df = pd.DataFrame.from_dict(d, orient='index', columns=tickers[0].statistics.keys())
+    df = pd.DataFrame.from_dict(d, orient='index', columns=tickers[0][0].statistics.keys())
 
     # print(data)
 

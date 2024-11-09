@@ -1,5 +1,7 @@
+from matplotlib import pyplot as plt
+
 from yfinance_info import YahooInfo
-from ticker import search_growth
+from ticker import search_growth, Portfolio
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
@@ -21,14 +23,40 @@ frmt = "%Y-%m-%d"  # T%H:%M:%S"
 read_tsv = lambda file: pd.read_csv(file, sep=sep, comment=comment, skip_blank_lines=True)
 
 
+def get_buy_amount(df):
+    buy_sign = df["BuyNotSell"] * 2 - 1
+    buy_amount = buy_sign * df["Amount"]
+    return buy_amount
+
+
+def create_portfolio(table):
+    # remove repetitions:
+    symbols = []
+    markets = []
+    ids = []
+    amounts  = []
+    for _, row in table.iterrows():
+        symbol = row["Ticker"]
+        market = row["Market"]
+        buy_amount = get_buy_amount(row)
+        if (symbol, market) in ids:
+            old_index = ids.index((symbol, market))
+            amounts[old_index] += buy_amount
+        else:
+            symbols.append(symbol)
+            markets.append(market)
+            ids.append((symbol, market))
+            amounts.append(buy_amount)
+    return Portfolio(symbols, markets, amounts, use_past_growth=True)
+
+
 def get_get_npv(table):  # will return the lambda function
     # time which had passed for each transaction
     duration = (pd.Timestamp.now().normalize() - pd.to_datetime(table["Date"], format=frmt)) / np.timedelta64(365, "D")
     # current price
     market_value = np.array([YahooInfo(row[1]["Ticker"], row[1]["Market"]).get_stock_price_now() for row in table.iterrows()])
     # buy\sell sign
-    buy_sign = table["BuyNotSell"] * 2 - 1
-    buy_amount = buy_sign * table["Amount"]
+    buy_amount = get_buy_amount(table)
     # calculate once, use in every get_npv
     portfolio_value = (market_value * buy_amount).sum()
     money_invested = buy_amount * table["Cost"]
@@ -88,6 +116,10 @@ if __name__ == '__main__':
     index_name, index_table = get_index(table)
     print("\nSimulated investment in %s gives:" % index_name)
     print("Index performed annually at: %.2f%%" % get_performance(index_table))
+
+    portfolio = create_portfolio(table)
+    portfolio.plot_portfolio()  # todo crushing
+    plt.show()
 
 
 

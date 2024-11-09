@@ -856,34 +856,99 @@ def format_axis(ax):
 
 known_index_symbols = ["%5EGSPC",]  # in yahoo format, not universal one, these will not have a ticker
 class TickerGroup(YahooGroup):
-    def __init__(self, symbols:list, markets:list):
+    def __init__(self, symbols:list, markets:list, *,
+                 risk_free_rate=None, existing_tickers:dict = dict(), use_past_growth=False):
+        symbols = [s.upper() for s in symbols]
+        markets = [m.upper() for m in markets]
         super().__init__(symbols, markets)
+        self.risk_free_rate = risk_free_rate
         self.symbols = symbols
         self.markets = markets
-        self.tickers_dictionary = dict()  # todo: dict[(symbol,market)] will hold the ticker, will be used for get_forcasted_monthly_growth(), otherwise use past growth
+        self.tickers_dictionary = existing_tickers  # dict[(symbol,market)] will hold the ticker, will be used for get_forcasted_monthly_growth(), otherwise use past growth
         self.annual_growth_forecasts = list()
+
         print("recreating tickers and calculating growth")  # todo optimize runtime
         for symbol, market in zip(symbols, markets):
-            if symbol not in known_index_symbols:
-                self.tickers_dictionary[(symbol,market)] = Ticker(symbol,market)
+            if not use_past_growth or symbol not in known_index_symbols:
+                if (symbol,market) not in self.tickers_dictionary:
+                    self.tickers_dictionary[(symbol,market)] = Ticker(symbol,market)
                 self.annual_growth_forecasts.append(self.tickers_dictionary[(symbol,market)].get_forecasted_annual_growth())
             else:
                 self.annual_growth_forecasts.append(self.get_past_annual_performance(symbol,market))
         print("calc cov")
-        cov = self.get_cov()
+        self.cov = self.get_cov()
         print("EF")
-        self.efficient_frontier = EfficientFrontier(self.annual_growth_forecasts, cov)
+        named_growth = pd.Series(data=self.annual_growth_forecasts, index=self.symbols)
+        self.efficient_frontier = EfficientFrontier(named_growth, self.cov)
 
-    def plot_frontier(self):
-        fig, ax = plt.subplots()
-        plotting.plot_efficient_frontier(self.efficient_frontier, ax=ax, show_assets=True)
+
+    def optimize(self, ax1=None, ax2=None):
+        print("risk_free_rate: %s" % self.risk_free_rate)
+        ax1 = self.plot_frontier(ax=ax1)
+        self.find_tangency_portfolio()
+        ax2 = self.plot_tangency(ax1, ax2)
         plt.show()
 
 
-class WeightedPortfolio:
+
+    def find_tangency_portfolio(self):
+        self.tangency_portfolio = self.efficient_frontier.max_sharpe(risk_free_rate=self.risk_free_rate)
+        self.return_tangent, self.std_tangent, self.sharpe_tangent = self.efficient_frontier.portfolio_performance(risk_free_rate=self.risk_free_rate, verbose=True)
+        #ax.scatter(std_tangent, ret_tangent, marker="*", s=100, c="r", label="Max Sharpe")
+
+
+
+    def plot_frontier(self, ax=None):
+        if not ax:
+            _, ax = plt.subplots()
+        plotting.plot_efficient_frontier(deepcopy(self.efficient_frontier), ax=ax, show_assets=True, show_tickers=True)
+        ax.set_title("Efficient Frontier")
+        ax.legend()
+        plt.tight_layout()
+        return ax
+
+    def plot_tangency(self, ax1, ax2=None):
+        if not ax2:
+            _, ax2 = plt.subplots()
+        ax1.plot(   [0, self.std_tangent], [self.risk_free_rate, self.return_tangent], c="r", label="Tangent")
+        ax1.scatter([0, self.std_tangent], [self.risk_free_rate, self.return_tangent], marker="*", s=100, c="r", label="Tangency Portfolio")
+        plotting.plot_weights(self.tangency_portfolio, ax=ax2)
+        return ax2
+
+
+class Portfolio(TickerGroup):
+    """
+    Used to predict future growth and volatility
+    Can show the efficient frontier and this portfolio plotted on it
+    todo: to calculate a beta of a stock against this portfolio
+    todo: calaculate avarage statistics like pe ratio
+    """
+    def __init__(self, symbols:list, markets:list, quantities:list, *,
+                 risk_free_rate=None, existing_tickers:dict = dict(), use_past_growth=False):
+        super().__init__(symbols, markets, risk_free_rate=risk_free_rate, existing_tickers=existing_tickers, use_past_growth=use_past_growth)
+        self.current_prices = self.get_stock_prices_now()
+        self.quantities = np.array(quantities)
+        self.weights = self.quantities * np.array(self.current_prices)
+        self.weights = self.weights / np.sum(self.weights)
+        # calc avarage behavior:
+        self.portfolio_annual_growth_forecast = np.dot(self.weights, self.annual_growth_forecasts)
+        self.portfolio_std = np.sqrt(self.weights.T @ self.cov @ self.weights)
+        # todo: if we want to have beta/covariance of the portfolio, we will need to avarage also the historical data
+
+    def plot_portfolio(self, ax=None):
+        ax = self.plot_frontier(ax=ax)
+        ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast)
+
+
+class HistoricPortfolio(Portfolio):
+    """
+    A portfolio who also includs buy & sell events. Allows tracking past performance
+    todo: use in portfolio_analyzer.py (instead of direct calculation)
+    """
     pass
 
 
 
 if __name__ == '__main__':
     Ticker.get_cache("AVGO", "NASDAQ").plot_me()
+    #Portfolio(["msft", "brk.b"], ["nasdaq", "nyse"], [10, 2])
