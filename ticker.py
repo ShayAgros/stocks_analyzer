@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import warnings
+from copy import deepcopy
 
 from pypfopt import EfficientFrontier, plotting
 
