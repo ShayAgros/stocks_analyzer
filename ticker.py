@@ -6,7 +6,7 @@ from pypfopt import EfficientFrontier, plotting
 
 from reports import Reports
 from yahoo_reports import YReports
-from yfinance_info import YahooInfo, YahooGroup
+from yfinance_info import YahooInfo, YahooGroup, yahoo_symbol_is_index
 import numpy as np
 import pandas as pd
 from numpy.polynomial.polynomial import Polynomial
@@ -854,8 +854,6 @@ def format_axis(ax):
 
 
 """ --- Portfolios: --- """
-
-known_index_symbols = ["%5EGSPC",]  # in yahoo format, not universal one, these will not have a ticker
 class TickerGroup(YahooGroup):
     def __init__(self, symbols:list, markets:list, *,
                  risk_free_rate=None, existing_tickers:dict = dict(), use_past_growth=False):
@@ -870,7 +868,7 @@ class TickerGroup(YahooGroup):
 
         print("recreating tickers and calculating growth")  # todo optimize runtime
         for symbol, market in zip(symbols, markets):
-            if not use_past_growth or symbol not in known_index_symbols:
+            if not use_past_growth or not yahoo_symbol_is_index(symbol):
                 if (symbol,market) not in self.tickers_dictionary:
                     self.tickers_dictionary[(symbol,market)] = Ticker(symbol,market)
                 self.annual_growth_forecasts.append(self.tickers_dictionary[(symbol,market)].get_forecasted_annual_growth())

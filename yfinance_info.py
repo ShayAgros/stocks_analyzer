@@ -11,6 +11,10 @@ class YfinanceException(Exception):
     pass
 
 
+def yahoo_symbol_is_index(symbol:str) -> bool:
+    return symbol.startswith("%5E") or symbol.startswith("^")
+
+
 market_to_yf_market = {
         "NASDAQ"    : None,  # None value will leave the symbol intact
         "NYSE"      : None,

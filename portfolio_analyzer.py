@@ -117,9 +117,9 @@ if __name__ == '__main__':
     print("\nSimulated investment in %s gives:" % index_name)
     print("Index performed annually at: %.2f%%" % get_performance(index_table))
 
-    portfolio = create_portfolio(table)
-    portfolio.plot_portfolio()  # todo crushing
-    plt.show()
+    #portfolio = create_portfolio(table)
+    #portfolio.plot_portfolio()  # todo crushing
+    #plt.show()
 
 
 
