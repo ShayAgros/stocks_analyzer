@@ -900,7 +900,7 @@ class TickerGroup(YahooGroup):
     def plot_frontier(self, ax=None):
         if not ax:
             _, ax = plt.subplots()
-        plotting.plot_efficient_frontier(deepcopy(self.efficient_frontier), ax=ax, show_assets=True, show_tickers=True)
+        plotting.plot_efficient_frontier(self.efficient_frontier.deepcopy(), ax=ax, ef_param="return", show_assets=True, show_tickers=True)
         ax.set_title("Efficient Frontier")
         ax.legend()
         plt.tight_layout()
@@ -936,7 +936,7 @@ class Portfolio(TickerGroup):
 
     def plot_portfolio(self, ax=None):
         ax = self.plot_frontier(ax=ax)
-        ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast)
+        ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast, 'ro')
 
 
 class HistoricPortfolio(Portfolio):
