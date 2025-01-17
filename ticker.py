@@ -465,13 +465,8 @@ class Ticker:
 
     def _calc_dcf_intrinsic_values(self,
                                    discount_rate=10/100,
-                                   use_bv_growth=True,
-                                   add_bv=True,
                                    forward_to_present=False,
-                                   short_term_is_linear=False,
-                                   long_growth_duration=-1,
-                                   forecasted_number_years_of_growth=8,
-                                   maximal_long_term_growth_rate=3/100
+                                   **kwargs
                                    ):
 
         old_stock_price = self.statistics["price on update"]
@@ -479,7 +474,7 @@ class Ticker:
             stock_price = self.yahoo_info.get_stock_price_now()
         else:
             stock_price = old_stock_price
-        calc_npv = self._get_calc_npv()
+        calc_npv = self._get_calc_npv(**kwargs)  # a lambda to calculate the npv given a wanted growth
         intrinsic_value = calc_npv(discount_rate)
         # calculate the intrinsic rate of return (by dcf model):
         if intrinsic_value > 0 and self.statistics["eps"] > 0:   # negative values will prefer high discount (unintuitivly)
