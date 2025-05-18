@@ -1,11 +1,10 @@
 import sys
+
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QRadioButton, QLineEdit, QLabel, QPushButton, QButtonGroup
 )
 from ticker import Ticker
-import sys
-# from PySide6 import QtWidgets
-# from PySide2 import QtWidgets
+
 from PyQt5 import QtWidgets
 from qt_material import apply_stylesheet  # import after the appropriate qtwidgets
 

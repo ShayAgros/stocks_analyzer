@@ -1,5 +1,4 @@
 yfinance
-python-csv
 pandas
 requests
 numpy
@@ -7,4 +6,6 @@ datetime
 htmldom
 matplotlib
 pyqt5
+qt-meterial==2.14
+PyPortfolioOpt
 colorama

@@ -5,5 +5,4 @@ msn_reports/
 tickers_cache/
 output.csv
 *.csv
-*.txt
 *.xlsx
