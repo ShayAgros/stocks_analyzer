@@ -56,14 +56,10 @@ class tickers_gui(QWidget):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
-    tickers = stocks_analyzer.create_tickers_from_file('inputs/my_stocks.txt')
-
-
-    d = {(f"{ticker.symbol}:{ticker.market}" ): ticker.statistics.values() for ticker in tickers[0]}
-    # ---- As Dataframe: ----
-    df = pd.DataFrame.from_dict(d, orient='index', columns=tickers[0][0].statistics.keys())
-
-    # print(data)
+    input_file = stocks_analyzer.select_stocks_file() 
+    tickers = stocks_analyzer.create_tickers_from_file(input_file)
+    df = stocks_analyzer.ticker_list_to_df(tickers)
+    df = df[stocks_analyzer.tldr_statistics]
 
     window = tickers_gui(df)
 

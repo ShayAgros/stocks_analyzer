@@ -120,9 +120,9 @@ class YahooInfo:
     def post_pickle(self):
         self.yf_ticker = yf.Ticker(self.full_symbol)
 
-    def __init__(self, symbol, market):
+    def __init__(self, symbol, market, *, yf_info = None):
         self.full_symbol, self.market_endian = get_ticker_from_standard_symbols(symbol, market)
-        self.yf_ticker = yf.Ticker(self.full_symbol)
+        self.yf_ticker = yf_info if yf_info else yf.Ticker(self.full_symbol)
         try:
             self.info = self.yf_ticker.info
             self.stock_prices = dict()
@@ -182,6 +182,7 @@ if __name__ == '__main__':  # test index
     import matplotlib.pyplot as plt
     y = YahooInfo('%5EGSPC', 'NYSE')  # S&P500
     y2 = YahooInfo("MSFT","NASDAQ")
+    y3 = YahooGroup(["MSFT","AAPL"],["NASDAQ", "NASDAQ"])
     fig = plt.figure()
     end_date = datetime.datetime.now()
     start_date = end_date - datetime.timedelta(days=(365.25*4))

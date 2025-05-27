@@ -3,6 +3,7 @@
 from ticker import Ticker, StatisticsException, TickerGroup
 from yfinance_info import YfinanceException
 from reports import MsnReportsException
+from PyQt5.QtWidgets import QApplication, QFileDialog
 import pandas as pd
 import warnings
 import sys
@@ -184,19 +185,17 @@ def filter_stocks_by_fields(ticker, fields):
 def extract_statistics(ticker):
     return ticker.statistics
 
+def ticker_list_to_df(tickers_list : list) -> pd.DataFrame:
+    d = {f"{ticker.symbol}:{ticker.market}" : extract_statistics(ticker).values() for ticker in tickers_list}
+    df = pd.DataFrame.from_dict(d, orient='index', columns=tickers_list[0].statistics.keys())
+    return df
 
 # This would output a csv file containing the statistics for each of the tickers
-def stocks_list_to_csv(tickers_list, out_path, show_fields=None, max_count=None, ignore_fields=None):
-    if max_count and max_count < len(tickers_list):
-        tickers_list = tickers_list[:max_count]
+def stocks_list_to_csv(tickers_list, out_path, show_fields=None, ignore_fields=None):
     if len(tickers_list) == 0:
         print("No Tickers To Save. ignored.")
         return
-
-    # as dictionary:
-    d = {(ticker.symbol): extract_statistics(ticker).values() for ticker in tickers_list}
-    # ---- As Dataframe: ----
-    df = pd.DataFrame.from_dict(d, orient='index', columns=tickers_list[0].statistics.keys())
+    df = ticker_list_to_df(tickers_list)
 
     if show_fields is not None:
         df = df[show_fields]
@@ -213,7 +212,7 @@ def stocks_list_to_csv(tickers_list, out_path, show_fields=None, max_count=None,
     return df
 
 
-def create_tickers_from_file(file_path):
+def create_tickers_from_file(file_path : str) -> list:
     """The function receives a path to a file containing entries of the form
     'TICKER MARKET' (e.g. 'AAPL NASDAQ') and returns a Ticker list"""
 
@@ -227,7 +226,23 @@ def create_tickers_from_file(file_path):
             line_attr = (" ".join(line_attr[:-1]), line_attr[-1])  # allow spaces in ticker name
             symbol_list.append(line_attr)
 
-    return create_tickers_from_symbol_names(symbol_list), symbol_list
+    return create_tickers_from_symbol_names(symbol_list)
+
+
+def group_tickers(tickers:list, filter_non_healthy:bool) -> TickerGroup:
+    """ group the tickers as TickerGroup for portfolio optimization """
+    # filter out tickers without positive price growth prediction
+    symbols = list()
+    markets = list()
+    existing_tickers = dict()
+    for ticker in tickers:  # take only successful ones, to avoid error handling
+        if (0 < ticker.statistics["irr[%]"] < 95) and (not filter_non_healthy or ticker.statistics["healthy"] == True):
+            symbols.append(ticker.symbol)
+            markets.append(ticker.market)
+            existing_tickers[(ticker.symbol, ticker.market)] = ticker
+    
+    ticker_group = TickerGroup(symbols, markets, existing_tickers=existing_tickers)
+    return ticker_group
 
 
 tldr_statistics = [  # a less overwhelming set of statistics
@@ -249,22 +264,31 @@ tldr_statistics = [  # a less overwhelming set of statistics
             "updated at",
         ]
 
+def select_stocks_file(parent_widget=None) -> str :
+    my_stocks_file, _ = QFileDialog.getOpenFileName(
+        parent_widget,
+        "Select Stocks File",
+        "test_inputs",
+        "Followed Stocks (*.txt)"
+    )
+    if not my_stocks_file:
+        raise Exception("NoInputFile") # todo better raise
+
+    return my_stocks_file
 
 def main():
+    app = QApplication(sys.argv)
     warnings.simplefilter('error')
 
     # 1) Create 'Ticker' variable for every symbol
     # 2) store result in some list
     # 3) Do something with the Ticker's list
     # 4) Save in a csv file
-    use_russel   = False
-    run_optimize = True
+    # 5) optionally, run portfolio correlation analysis
+    run_optimize = False
     filter_non_healthy = True
     risk_free_rate = 4 / 100
-
-    my_stocks_file = "inputs/my_stocks.txt"
-    russel_file = "inputs/russel_formated.txt"
-    my_stocks_file = russel_file if use_russel else my_stocks_file
+    my_stocks_file = select_stocks_file()
 
     csv_path  = ".".join(basename(my_stocks_file).split(".")[:-1]) + "_statistics.csv"
     tldr_path = ".".join(basename(my_stocks_file).split(".")[:-1]) + "_statistics_tldr.csv"
@@ -277,26 +301,16 @@ def main():
         print("Close Excel!")
         sleep(3)
 
-    tickers, ids = create_tickers_from_file(my_stocks_file)
+    tickers = create_tickers_from_file(my_stocks_file)
 
-    # filtering_function =
-    #   lambda stock: filter_stocks_by_fields(stock, [["eps", 3, False], ["sector", "Technology"]])
-    # tickers = filter(filtering_function, tickers)
-    # tickers = sort_stocks_by_fields(tickers, [["book_value", True], ["eps", True]])
     df = stocks_list_to_csv(tickers, csv_path)
     stocks_list_to_csv(tickers, tldr_path, show_fields=tldr_statistics)
 
     # optimizer:
     if run_optimize:
         print("starting our optimizer")
-        symbols = list()
-        markets = list()
-        for i, (symbol, market) in enumerate(ids):  # take only successful ones, to avoid error handling
-            if symbol in df.index and (0 < df["irr[%]"][symbol] < 95) and (not filter_non_healthy or df["healthy"][symbol] == True):
-                symbols.append(symbol)
-                markets.append(market)
-        existing_tickers = {(ticker.symbol, ticker.market): ticker for ticker in tickers}
-        portfolio_optimizer = TickerGroup(symbols, markets, risk_free_rate=risk_free_rate, existing_tickers=existing_tickers)
+        portfolio_optimizer = group_tickers(tickers, filter_non_healthy)
+        portfolio_optimizer.risk_free_rate = risk_free_rate
         print("plotting")
         portfolio_optimizer.optimize()
 

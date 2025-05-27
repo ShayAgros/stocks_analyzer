@@ -6,6 +6,6 @@ datetime
 htmldom
 matplotlib
 pyqt5
-qt-meterial==2.14
+qt-material==2.14
 PyPortfolioOpt
 colorama

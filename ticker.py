@@ -565,12 +565,12 @@ class Ticker:
         result += "Statistics:\n%s,\n" % pformat(self.statistics)
 
 
-    def __init__(self, symbol, market):
+    def __init__(self, symbol, market, *, yf_info = None):
 
         self.symbol = symbol.upper()
         self.market = market.upper()
 
-        self.yahoo_info = YahooInfo(self.symbol, self.market)
+        self.yahoo_info = YahooInfo(self.symbol, self.market, yf_info = yf_info)
 
         # This would throw an exception if it fails
         self.reports = YReports(symbol, market, self.yahoo_info.yf_ticker)
@@ -767,6 +767,8 @@ class Ticker:
         statements = self.reports.get_reports_ascending("annual", "income_statement", self.reports.has_full_ttm())
         # - subtract some date just to convert to timedelta type
         annual_dates = [(date - self.statistics["updated at"]).days for date in
+
+
                         self.reports.get_reports_dates("annual", self.reports.has_full_ttm())]
         yearly_earnings = [statement["Net Income"] for statement in statements]
         poly_fit = Polynomial.fit(annual_dates, yearly_earnings, deg=1)
@@ -862,10 +864,10 @@ class TickerGroup(YahooGroup):
         self.annual_growth_forecasts = list()
 
         print("recreating tickers and calculating growth")  # todo optimize runtime
-        for symbol, market in zip(symbols, markets):
+        for symbol, market, full_symbol in zip(symbols, markets, self.full_symbols):
             if not use_past_growth or not yahoo_symbol_is_index(symbol):
                 if (symbol,market) not in self.tickers_dictionary:
-                    self.tickers_dictionary[(symbol,market)] = Ticker(symbol,market)
+                    self.tickers_dictionary[(symbol,market)] = Ticker(symbol, market, yf_info=self.yf_ticker.tickers[full_symbol])
                 self.annual_growth_forecasts.append(self.tickers_dictionary[(symbol,market)].get_forecasted_annual_growth())
             else:
                 self.annual_growth_forecasts.append(self.get_past_annual_performance(symbol,market))
@@ -874,7 +876,6 @@ class TickerGroup(YahooGroup):
         print("EF")
         named_growth = pd.Series(data=self.annual_growth_forecasts, index=self.symbols)
         self.efficient_frontier = EfficientFrontier(named_growth, self.cov)
-
 
     def optimize(self, ax1=None, ax2=None):
         print("risk_free_rate: %s" % self.risk_free_rate)
@@ -944,5 +945,5 @@ class HistoricPortfolio(Portfolio):
 
 
 if __name__ == '__main__':
-    Ticker.get_cache("AVGO", "NASDAQ").plot_me()
-    #Portfolio(["msft", "brk.b"], ["nasdaq", "nyse"], [10, 2])
+    #Ticker.get_cache("AVGO", "NASDAQ").plot_me()
+    Portfolio(["msft", "brk.b"], ["nasdaq", "nyse"], [10, 2])
