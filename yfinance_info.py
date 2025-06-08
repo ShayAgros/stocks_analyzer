@@ -28,6 +28,7 @@ market_to_yf_market = {
         "TLV"       : "TA",  # Israel
         "KRX"       : "KS",  # Korea
         "SHE"       : "SZ",
+        "TSE"       : "TO",  # Toronto
     }
 
 def get_ticker_from_standard_symbols(symbol:str, market:str):
