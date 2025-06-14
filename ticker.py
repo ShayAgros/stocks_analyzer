@@ -860,22 +860,39 @@ class TickerGroup(YahooGroup):
         self.risk_free_rate = risk_free_rate
         self.symbols = symbols
         self.markets = markets
+        self.portfolio_std = np.nan
         self.tickers_dictionary = existing_tickers  # dict[(symbol,market)] will hold the ticker, will be used for get_forcasted_monthly_growth(), otherwise use past growth
+        self.use_past_growth = use_past_growth
         self.annual_growth_forecasts = list()
 
+    def calculate_correlation(self):
+        super().calculate_correlation()
+        self.calculate_growth_forecast()
+        self.create_frontier()
+
+    def calculate_growth_forecast(self):
         print("recreating tickers and calculating growth")  # todo optimize runtime
-        for symbol, market, full_symbol in zip(symbols, markets, self.full_symbols):
-            if not use_past_growth or not yahoo_symbol_is_index(symbol):
+        for symbol, market, full_symbol in zip(self.symbols, self.markets, self.full_symbols):
+            if not self.use_past_growth or not yahoo_symbol_is_index(symbol):
                 if (symbol,market) not in self.tickers_dictionary:
                     self.tickers_dictionary[(symbol,market)] = Ticker(symbol, market, yf_info=self.yf_ticker.tickers[full_symbol])
                 self.annual_growth_forecasts.append(self.tickers_dictionary[(symbol,market)].get_forecasted_annual_growth())
             else:
                 self.annual_growth_forecasts.append(self.get_past_annual_performance(symbol,market))
-        print("calc cov")
-        self.cov = self.get_cov()
+
+#    def calculate_tickers(self):
+#        """fetch in parrallel"""
+#        uncached_tickers = [item for item in zip(self.symbols, self.markets) if (item not in self.tickers_dictionary) and not yahoo_symbol_is_index(item[0]) ] 
+#        tickers_list = create_tickers_from_symbol_names(uncached_tickers)
+#        for ticker in tickers_list:
+#            self.tickers_dictionary[(ticker.symbol, ticker.market)] = ticker
+
+
+
+    def create_frontier(self):
         print("EF")
         named_growth = pd.Series(data=self.annual_growth_forecasts, index=self.symbols)
-        self.efficient_frontier = EfficientFrontier(named_growth, self.cov)
+        self.efficient_frontier = EfficientFrontier(named_growth, self.cov, verbose=True, solver="OSQP")  # todo 
 
     def optimize(self, ax1=None, ax2=None):
         print("risk_free_rate: %s" % self.risk_free_rate)
@@ -888,7 +905,8 @@ class TickerGroup(YahooGroup):
 
     def find_tangency_portfolio(self):
         self.tangency_portfolio = self.efficient_frontier.max_sharpe(risk_free_rate=self.risk_free_rate)
-        self.return_tangent, self.std_tangent, self.sharpe_tangent = self.efficient_frontier.portfolio_performance(risk_free_rate=self.risk_free_rate, verbose=True)
+
+        self.return_tangent, self.std_tangent, self.sharpe_tangent = self.efficient_frontier.portfolio_performance(risk_free_rate=self.risk_free_rate)
         #ax.scatter(std_tangent, ret_tangent, marker="*", s=100, c="r", label="Max Sharpe")
 
 
@@ -914,6 +932,7 @@ class TickerGroup(YahooGroup):
 class Portfolio(TickerGroup):
     """
     Used to predict future growth and volatility
+
     Can show the efficient frontier and this portfolio plotted on it
     todo: to calculate a beta of a stock against this portfolio
     todo: calaculate avarage statistics like pe ratio
@@ -925,10 +944,22 @@ class Portfolio(TickerGroup):
         self.quantities = np.array(quantities)
         self.weights = self.quantities * np.array(self.current_prices)
         self.weights = self.weights / np.sum(self.weights)
+        self.weights_dict = dict(zip(zip(self.symbols, self.markets), self.weights))
+
+        self.portfolio_annual_growth_forecast = np.nan
+        self.portfolio_std = np.nan
+
+
+    def get_weight(self, symbol:str, market:str):
+        """in percents and rounded"""
+        return float(np.round((self.weights_dict[(symbol, market)] * 100), decimals=2))
+
+    def calculate_correlation(self):
+        super().calculate_correlation()
         # calc avarage behavior:
         self.portfolio_annual_growth_forecast = np.dot(self.weights, self.annual_growth_forecasts)
         self.portfolio_std = np.sqrt(self.weights.T @ self.cov @ self.weights)
-        # todo: if we want to have beta/covariance of the portfolio, we will need to avarage also the historical data
+        # todo: if we want to have beta/covariance of the portfolio, we will need to avarage also the historical prices data
 
     def plot_portfolio(self, ax=None):
         ax = self.plot_frontier(ax=ax)

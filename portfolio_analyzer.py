@@ -1,7 +1,9 @@
+#!/usr/bin/env python3
+
 from matplotlib import pyplot as plt
 
 from yfinance_info import YahooInfo
-from ticker import search_growth, Portfolio
+from ticker import TickerGroup, search_growth, Portfolio
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
@@ -71,12 +73,10 @@ def get_get_future_npv(table):
     pass  # todo will call all ticker.get_calc_npv()
 
 
-def get_performance(table):
+def get_performance(table, verbose=True):
     # todo check if can be assumed to be monotonic, I think not
     profitable, portfolio_value, money_invested, get_npv = get_get_npv(table)
-    print("Amount of money invested: %.2f" % money_invested)
-    print("Current portfolio value:  %.2f" % portfolio_value)
-    print("Calculating avarage performance...")
+    if verbose: print("Money invested: %.2f -> %.2f" % (money_invested, portfolio_value))
     return search_growth(
         npv_function=get_npv,
         price=0,
@@ -84,6 +84,23 @@ def get_performance(table):
         max_growth=4 if profitable else 0,
         delta_growth=0.1 / 100
     )
+    
+
+def performance_per_ticker(table, portfolio:Portfolio) -> pd.DataFrame:
+    # each ticker need: portfolio_weight, growth
+    Histories = {name[0]:group for name, group in table.groupby(["Ticker"])}
+    Performance = dict()
+    for name, history in Histories.items():
+        market = history.iloc[0]["Market"]
+#        ticker = portfolio.tickers_dictionary[(name, market)]
+        Performance[name] = dict()
+        Performance[name]["Annualized Price Growth"] = get_performance(history, verbose=False)
+        Performance[name]["Weight[%]"] = portfolio.get_weight(name, market)
+#        # more data at a glance:
+#        Performance[name]["pe_ratio"]    = ticker.statistics["pe_ratio"]
+#        Performance[name]["healthy"]     = ticker.statistics["healthy"]
+#        Performance[name]["overvalued"]  = ticker.statistics["overvalued"]
+    return pd.DataFrame.from_dict(Performance, orient="index")
 
 
 def get_index(table):
@@ -108,21 +125,28 @@ def get_index(table):
 
 
 if __name__ == '__main__':
-    file = "inputs/Portfolio1.tsv"
+    file = "test_inputs/Portfolio1.tsv"
+    run_portfolio_optimization = False
+
+    print("--------------------------------------------")
     table = read_tsv(file)
     print("Portfolio performed annually at: %.2f%%" % get_performance(table))
     stdout.flush()
 
     index_name, index_table = get_index(table)
-    print("\nSimulated investment in %s gives:" % index_name)
-    print("Index performed annually at: %.2f%%" % get_performance(index_table))
+    print("%s performed annually at: %.2f%%" % (index_name, get_performance(index_table)))
+    print("--------------------------------------------")
 
     portfolio = create_portfolio(table)
-    try:
+    print(performance_per_ticker(table, portfolio))
+
+    if run_portfolio_optimization:
+        print("\nAnalyzing Portfolio:")
+        portfolio.calculate_correlation()
         portfolio.plot_portfolio()  # todo crushing when best return is also least risk, sometimes also from failed optimizer : if crash, try plotting front for each risk instead of each return
         plt.show()
-    except Exception as e:
-        print("Error - Failed to calculate Frontier")
+        #except Exception as e:
+        #    print("Error - Failed to calculate Frontier")
 
 
 

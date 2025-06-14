@@ -140,7 +140,10 @@ class YahooGroup:
         for i in range(len(symbols)):
             self.full_symbols.append(get_ticker_from_standard_symbols(symbols[i], markets[i])[0])
         self.yf_ticker = yf.Tickers(" ".join(self.full_symbols))
-        self.get_monthly_prices()  #
+
+    def calculate_correlation(self):
+        self.get_monthly_prices()
+        self.get_cov()
 
     def get_monthly_prices(self) -> None:
         """
@@ -163,7 +166,7 @@ class YahooGroup:
         return (1 + monthly) ** 12 - 1
 
     def get_cov(self):
-        return self.get_monthly_growths().cov().values * 12  # multiply by 12 to convert from monthly to annual variance
+        self.cov = self.get_monthly_growths().cov().values * 12  # multiply by 12 to convert from monthly to annual variance
 
     # -----------------------------------------------------------------------------
 
