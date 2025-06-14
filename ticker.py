@@ -952,7 +952,7 @@ class Portfolio(TickerGroup):
 
     def get_weight(self, symbol:str, market:str):
         """in percents and rounded"""
-        return float(np.round((self.weights_dict[(symbol, market)] * 100), decimals=2))
+        return round((self.weights_dict[(symbol, market)] * 100), 2)
 
     def calculate_correlation(self):
         super().calculate_correlation()
