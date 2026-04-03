@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
 
 from matplotlib import pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSizePolicy, QPushButton)
-from PyQt5.QtCore import Qt
-
 from yfinance_info import YahooInfo
-from ticker import TickerGroup, search_growth, Portfolio, Ticker
+from ticker import TickerGroup, search_growth, Ticker
+from portfolio import Portfolio, PortfolioGui
+
+
+class HistoricPortfolioGui(PortfolioGui):
+    def __init__(self, portfolio, perf_df, portfolio_irr, money_invested, portfolio_value,
+                 index_name, index_irr, index_value, show_frontier=False):
+        super().__init__(portfolio, show_frontier)
+        summary = (
+            "Portfolio:  {:.2f} -> {:.2f}\n"
+            "            {:.2f}% / yr\n\n"
+            "{}:  {:.2f} -> {:.2f}\n"
+            "            {:.2f}% / yr"
+        ).format(money_invested, portfolio_value, portfolio_irr,
+                 index_name, money_invested, index_value, index_irr)
+        self.set_summary(summary, perf_df)
+
+
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
@@ -128,85 +141,6 @@ def get_index(table):
 
 
 
-class PortfolioGui(QWidget):
-    def __init__(self, portfolio, perf_df, portfolio_irr, money_invested, portfolio_value,
-                 index_name, index_irr, index_value, show_frontier=False):
-        super().__init__()
-        self.setWindowTitle("Portfolio Analyzer")
-        self.setGeometry(100, 100, 1400, 700)
-
-        root = QHBoxLayout(self)
-
-        # --- left: frontier ---
-        if show_frontier:
-            fig_frontier, ax = plt.subplots()
-            portfolio.plot_portfolio(ax=ax)
-            growth_mode = "Past Growth" if portfolio.use_past_growth else "DCF Forecast"
-            ax.set_ylabel("Expected Return (%s)" % growth_mode)
-            ax.grid(True)
-            root.addWidget(FigureCanvas(fig_frontier), stretch=3)
-
-        # --- right: stats + pie ---
-        stats_layout = QVBoxLayout()
-        stats_layout.setAlignment(Qt.AlignTop)
-        root.addLayout(stats_layout, stretch=1)
-
-        summary = (
-            "Portfolio:  {:.2f} -> {:.2f}\n"
-            "            {:.2f}% / yr\n\n"
-            "{}:  {:.2f} -> {:.2f}\n"
-            "            {:.2f}% / yr"
-        ).format(money_invested, portfolio_value, portfolio_irr,
-                 index_name, money_invested, index_value, index_irr)
-        lbl = QLabel(summary)
-        lbl.setStyleSheet("font-size: 14px; padding: 8px;")
-        stats_layout.addWidget(lbl)
-
-        table_text = perf_df.to_string(float_format=lambda x: "%.1f" % x)
-        tbl = QLabel(table_text)
-        tbl.setStyleSheet("font-family: monospace; font-size: 12px; padding: 8px;")
-        tbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        stats_layout.addWidget(tbl)
-
-        # --- screener button ---
-        self._portfolio = portfolio
-        self._screener_window = None
-        btn = QPushButton("Open Screener")
-        btn.clicked.connect(self._open_screener)
-        stats_layout.addWidget(btn)
-
-        fig_pie, (ax_t, ax_s) = plt.subplots(1, 2)
-        portfolio.plot_concentric_pie(ax=(ax_t, ax_s))
-        canvas_pie = FigureCanvas(fig_pie)
-        stats_layout.addWidget(canvas_pie)
-
-        # double-click on ticker wedge opens GrowthApp
-        self._growth_windows = []
-        def on_pie_dblclick(event):
-            if event.dblclick and event.inaxes is ax_t:
-                for wedge, symbol in portfolio._ticker_wedges:
-                    if wedge.contains(event)[0]:
-                        market = dict(zip(portfolio.symbols, portfolio.markets)).get(symbol)
-                        if market:
-                            from npv_calculator import GrowthApp
-                            ticker = portfolio.tickers_dictionary.get((symbol, market)) or \
-                                     Ticker.get_cache(symbol, market)
-                            win = GrowthApp(ticker=ticker)
-                            self._growth_windows.append(win)
-                            win.show()
-                        break
-        fig_pie.canvas.mpl_connect('button_press_event', on_pie_dblclick)
-
-
-    def _open_screener(self):
-        from stocks_analyzer import tldr_statistics
-        from ticker_gui import tickers_gui
-        df = self._portfolio.to_df()
-        df = df[[c for c in tldr_statistics if c in df.columns]]
-        self._screener_window = tickers_gui(df)
-        self._screener_window.show()
-
-
 if __name__ == '__main__':
     from PyQt5.QtWidgets import QApplication
     from qt_material import apply_stylesheet
@@ -228,7 +162,7 @@ if __name__ == '__main__':
     if run_portfolio_optimization:
         portfolio.calculate_correlation()
 
-    gui = PortfolioGui(portfolio, perf_df, portfolio_irr, money_invested, portfolio_value,
+    gui = HistoricPortfolioGui(portfolio, perf_df, portfolio_irr, money_invested, portfolio_value,
                        index_name, index_irr, index_value, run_portfolio_optimization)
     gui.show()
     sys.exit(app.exec_())

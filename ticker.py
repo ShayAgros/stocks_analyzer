@@ -692,7 +692,10 @@ class Ticker:
         self.save_cache()
 
     def get_forecasted_annual_growth(self):
-        return self.statistics[forcast_growth_field]/100  # assume field is annual and in percents
+        forcast = self.statistics[forcast_growth_field]/100  # assume field is annual and in percents
+        forcast = forcast if forcast and forcast > 0 else 0
+        forcast = min(forcast, 1)
+        return forcast
 
     # Plotting:
 
@@ -970,7 +973,7 @@ class TickerGroup(YahooGroup):
     def create_frontier(self):
         print("EF")
         named_growth = pd.Series(data=self.annual_growth_forecasts, index=self.symbols)
-        self.efficient_frontier = EfficientFrontier(named_growth, self.cov, solver="OSQP")  # , verbose=True # todo 
+        self.efficient_frontier = EfficientFrontier(named_growth, self.cov, verbose=False)  # , verbose=True # todo 
 
     def optimize(self, ax1=None, ax2=None):
         print("risk_free_rate: %s" % self.risk_free_rate)
@@ -1007,180 +1010,10 @@ class TickerGroup(YahooGroup):
         return ax2
 
 
-class Portfolio(TickerGroup):
-    """
-    Used to predict future growth and volatility
-
-    Can show the efficient frontier and this portfolio plotted on it
-    todo: to calculate a beta of a stock against this portfolio
-    todo: calaculate avarage statistics like pe ratio
-    """
-    def __init__(self, symbols:list, markets:list, quantities:list, *,
-                 risk_free_rate=None, existing_tickers:dict = dict(), use_past_growth=False):
-        super().__init__(symbols, markets, risk_free_rate=risk_free_rate, existing_tickers=existing_tickers, use_past_growth=use_past_growth)
-        self.current_prices = self.get_stock_prices_now()
-        self.quantities = np.array(quantities)
-        self.weights = self.quantities * np.array(self.current_prices)
-        self.weights = self.weights / np.sum(self.weights)
-        self.weights_dict = dict(zip(zip(self.symbols, self.markets), self.weights))
-
-        self.portfolio_annual_growth_forecast = np.nan
-        self.portfolio_std = np.nan
-
-
-    def get_weight(self, symbol:str, market:str):
-        """in percents and rounded"""
-        return round((self.weights_dict[(symbol, market)] * 100), 2)
-
-    def calculate_correlation(self):
-        super().calculate_correlation()
-        # calc avarage behavior:
-        self.portfolio_annual_growth_forecast = np.dot(self.weights, self.annual_growth_forecasts)
-        self.portfolio_std = np.sqrt(self.weights.T @ self.cov @ self.weights)
-        # todo: if we want to have beta/covariance of the portfolio, we will need to avarage also the historical prices data
-
-    def plot_pie(self, ax=None):
-        if not ax:
-            _, ax = plt.subplots()
-        ax.pie(self.weights, labels=self.symbols)
-
-    def plot_concentric_pie(self, ax=None):
-        """Two pies: left=tickers sorted by sector, right=sector+industry concentric."""
-        if ax is None:
-            _, (ax_tickers, ax_sectors) = plt.subplots(1, 2)
-        else:
-            # ax is expected to be a tuple (ax_tickers, ax_sectors)
-            ax_tickers, ax_sectors = ax
-
-        # build per-ticker metadata
-        data = []
-        for sym, mkt, w in zip(self.symbols, self.markets, self.weights):
-            t = self.tickers_dictionary.get((sym, mkt))
-            sector = (t.statistics.get("sector") or "Unknown") if t else "Unknown"
-            industry = (t.statistics.get("industry") or "Unknown") if t else "Unknown"
-            data.append((sector, industry, sym, w))
-
-        data.sort(key=lambda x: (x[0], x[1]))
-        sectors_sorted   = [d[0] for d in data]
-        industries_sorted = [d[1] for d in data]
-        symbols_sorted   = [d[2] for d in data]
-        weights_sorted   = [d[3] for d in data]
-
-        # collapse consecutive runs for industry/sector rings
-        industry_slices, sector_slices = [], []
-        for ind, sec, w in zip(industries_sorted, sectors_sorted, weights_sorted):
-            if industry_slices and industry_slices[-1][0] == ind:
-                industry_slices[-1] = (ind, industry_slices[-1][1] + w)
-            else:
-                industry_slices.append((ind, w))
-            if sector_slices and sector_slices[-1][0] == sec:
-                sector_slices[-1] = (sec, sector_slices[-1][1] + w)
-            else:
-                sector_slices.append((sec, w))
-
-        import colorsys
-        cmap = plt.get_cmap("tab10")
-        n_sec = len(sector_slices)
-        sec_color = {s[0]: cmap(i / max(n_sec, 1)) for i, s in enumerate(sector_slices)}
-
-        # --- left pie: tickers get matplotlib default colors ---
-        ax_tickers.pie(weights_sorted, labels=symbols_sorted,
-                       wedgeprops=dict(edgecolor='w'),
-                       labeldistance=0.6)
-        ax_tickers.set_title("Tickers")
-
-        # --- right pie: industry (outer) = shades of sector color, sector (inner) = base color ---
-        # count industries per sector to vary lightness
-        sec_industry_idx = {}
-        sec_industry_count = {}
-        for s in industry_slices:
-            ind = s[0]
-            sec = sectors_sorted[[i for i, x in enumerate(industries_sorted) if x == ind][0]]
-            sec_industry_count[sec] = sec_industry_count.get(sec, 0) + 1
-        for sec in sec_industry_count:
-            sec_industry_idx[sec] = 0
-
-        mid_colors = []
-        for s in industry_slices:
-            ind = s[0]
-            sec = sectors_sorted[[i for i, x in enumerate(industries_sorted) if x == ind][0]]
-            base = sec_color[sec][:3]
-            total = sec_industry_count[sec]
-            idx = sec_industry_idx[sec]
-            factor = 0.35 + 0.5 * (idx / max(total - 1, 1))
-            h, l, sat = colorsys.rgb_to_hls(*base)
-            mid_colors.append(colorsys.hls_to_rgb(h, factor, sat))
-            sec_industry_idx[sec] += 1
-
-        ax_sectors.pie([s[1] for s in industry_slices],
-                       labels=[s[0] for s in industry_slices],
-                       radius=1.0, colors=mid_colors,
-                       wedgeprops=dict(width=0.4, edgecolor='w'),
-                       labeldistance=0.8)
-        ax_sectors.pie([s[1] for s in sector_slices],
-                       labels=[s[0] for s in sector_slices],
-                       radius=0.6, colors=[sec_color[s[0]] for s in sector_slices],
-                       wedgeprops=dict(width=0.6, edgecolor='w'),
-                       labeldistance=0.8)
-        ax_sectors.set_title("Sector / Industry")
-
-        # --- hover tooltip showing percentage ---
-        fig = ax_tickers.get_figure()
-        annot = fig.text(0, 0, "", va="bottom", ha="left",
-                         bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.8),
-                         visible=False)
-
-        all_wedges = [w for ax in (ax_tickers, ax_sectors)
-                      for w in ax.patches if hasattr(w, 'get_label')]
-
-        def on_hover(event):
-            visible = False
-            for wedge in all_wedges:
-                if wedge.contains(event)[0]:
-                    pct = wedge.theta2 - wedge.theta1
-                    pct_val = pct / 360 * 100
-                    label = wedge.get_label()
-                    annot.set_text(f"{label}: {pct_val:.1f}%")
-                    annot.set_position((event.x / fig.get_size_inches()[0] / fig.dpi,
-                                        event.y / fig.get_size_inches()[1] / fig.dpi))
-                    visible = True
-                    break
-            annot.set_visible(visible)
-            fig.canvas.draw_idle()
-
-        fig.canvas.mpl_connect('motion_notify_event', on_hover)
-
-        # store ticker wedges for double-click handling
-        self._ticker_wedges = list(zip(ax_tickers.patches, symbols_sorted))
-
-    def plot_portfolio(self, ax=None):
-        ax = self.plot_frontier(ax=ax)
-        ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast, 'ro')
-
-    def to_df(self) -> pd.DataFrame:
-        """Return a statistics DataFrame in the same format as stocks_analyzer.ticker_list_to_df()."""
-        tickers = []
-        for sym, mkt, full_sym in zip(self.symbols, self.markets, self.full_symbols):
-            if (sym, mkt) not in self.tickers_dictionary:
-                self.tickers_dictionary[(sym, mkt)] = Ticker.get_cache(
-                    sym, mkt, yf_ticker=self.yf_ticker.tickers[full_sym])
-            tickers.append(self.tickers_dictionary[(sym, mkt)])
-        d = {f"{t.symbol}:{t.market}": t.statistics.values() for t in tickers}
-        return pd.DataFrame.from_dict(d, orient='index', columns=tickers[0].statistics.keys())
-
-
-class HistoricPortfolio(Portfolio):
-    """
-    A portfolio who also includs buy & sell events. Allows tracking past performance
-    todo: use in portfolio_analyzer.py (instead of direct calculation)
-    """
-    pass
-
 
 
 if __name__ == '__main__':
-    # ticker_name = input("Ticker Name: ")
-    # stock_exchange = input("Stock Exchange: ")
+    ticker_name = input("Ticker Name: ")
+    stock_exchange = input("Stock Exchange: ")
 
-    # Ticker.get_cache(ticker_name, stock_exchange).plot_me()
-    Portfolio(["msft", "brk.b"], ["nasdaq", "nyse"], [10, 2])
+    Ticker.get_cache(ticker_name, stock_exchange).plot_me()
