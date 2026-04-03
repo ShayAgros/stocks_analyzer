@@ -3,98 +3,169 @@
 import sys
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QRadioButton, QLineEdit, QLabel, QPushButton, QButtonGroup
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QRadioButton, QLineEdit, QLabel, QPushButton, QButtonGroup, QCheckBox
 )
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from ticker import Ticker
+import numpy as np
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtCore
 from qt_material import apply_stylesheet  # import after the appropriate qtwidgets
 
 
 # -----------------------------------------------------------------------------------------------------
 
 class GrowthApp(QWidget):
-    def __init__(self):
+    def __init__(self, ticker=None):
         super().__init__()
-        self.ticker = Ticker.get_cache("QCOM", "NASDAQ")  # todo select
+        self.ticker = ticker or Ticker.get_cache("QCOM", "NASDAQ")  # todo select
         self.initUI()
 
-    def _init_radio(self, names : list, text_box : QLineEdit = None, horizontal : bool = False, prefix:str=None) -> QButtonGroup:
-        """
-        create a new boxlayout of the radios, optionally add the last radio a textbox and return the radio_group
-        """
+    def _init_radio(self, names: list, text_box: QLineEdit = None, horizontal: bool = False, prefix: str = None) -> QButtonGroup:
         radio_layout = QHBoxLayout() if horizontal else QVBoxLayout()
-        radio_group  = QButtonGroup(self)
+        radio_group = QButtonGroup(self)
 
         if prefix is not None:
             radio_layout.addWidget(QLabel(prefix))
 
         for id, name in enumerate(names):
-            radio_btn = QRadioButton(name, self)
+            radio_btn = QRadioButton(name)
             radio_group.addButton(radio_btn)
-            if (text_box is not None) and (id == len(names)-1):
-                # add the textbox to the radio
+            if (text_box is not None) and (id == len(names) - 1):
                 custom_layout = QHBoxLayout()
                 custom_layout.addWidget(radio_btn)
                 custom_layout.addWidget(text_box)
                 radio_layout.addLayout(custom_layout)
             else:
                 radio_layout.addWidget(radio_btn)
-        self.layout().addLayout(radio_layout)
+        self.controls_layout.addLayout(radio_layout)
         return radio_group
 
     def initUI(self):
         self.setWindowTitle("Growth Parameters")
-        layout = QVBoxLayout()
-        self.setLayout(layout)
 
+        # top-level horizontal split: plot on left, controls on right
+        root_layout = QHBoxLayout()
+        self.setLayout(root_layout)
+
+        # --- left: matplotlib figure ---
+        fig = self.ticker.plot_me(show=False)
+        canvas = FigureCanvas(fig)
+        canvas.setMinimumWidth(800)
+        toolbar = NavigationToolbar(canvas, self)
+        plot_layout = QVBoxLayout()
+        plot_layout.addWidget(canvas)
+        plot_layout.addWidget(toolbar)
+        root_layout.addLayout(plot_layout, stretch=3)
+
+        # --- right: controls ---
+        controls_widget = QWidget()
+        self.controls_layout = QVBoxLayout()
+        controls_widget.setLayout(self.controls_layout)
+        root_layout.addWidget(controls_widget, stretch=1)
 
         # Growth Trend Section
         self.trend_group = self._init_radio(prefix="Growth Trend:", names=["Linear", "Exponential"], horizontal=True)
+        self.trend_group.buttons()[1].setChecked(True)  # Exponential default
 
         # Growth Time Section
         growth_time_layout = QHBoxLayout()
         growth_time_label = QLabel("Growth Time:")
-        self.growth_time_input = QLineEdit()
+        self.growth_time_input = QLineEdit("5")
         growth_time_layout.addWidget(growth_time_label)
         growth_time_layout.addWidget(self.growth_time_input)
-        layout.addLayout(growth_time_layout)
+        self.controls_layout.addLayout(growth_time_layout)
 
         # Growth Benchmark Section
-        self.custom_growth_input = QLineEdit()  # todo each benchmark should list its growth_rate
+        self.custom_growth_input = QLineEdit()
         self.growth_benchmark_group = self._init_radio(prefix="Growth Benchmark:", text_box=self.custom_growth_input,
-                                                       names=[
-                                                            "Earnings",
-                                                            "Book Value",
-                                                            "Revenue",
-                                                            "FCF",
-                                                            "Custom"
-                                                       ])
+                                                       names=["Earnings", "Book Value", "Revenue", "FCF", "Custom"])
+        self.growth_benchmark_group.buttons()[0].setChecked(True)
 
         # Perpetuity Growth Section
-        self.perpetuity_growth_input = QLineEdit()
+        self.perpetuity_growth_input = QLineEdit("2")
         self.perpetuity_group = self._init_radio(prefix="Perpetuity Growth:", text_box=self.perpetuity_growth_input,
                                                  names=["Nothing", "Constant", "Slow Exponent"])
+        self.perpetuity_group.buttons()[2].setChecked(True)  # Slow Exponent default
+
+        # Discount Rate Section
+        discount_layout = QHBoxLayout()
+        discount_layout.addWidget(QLabel("Discount Rate (%):"))
+        self.discount_rate_input = QLineEdit("10")
+        discount_layout.addWidget(self.discount_rate_input)
+        self.controls_layout.addLayout(discount_layout)
+
+        # CAPM info
+        try:
+            from ticker import market_data
+            rfr = market_data.get_risk_free_rate() * 100
+            mkt = market_data.get_market_return() * 100
+            capm = self.ticker.statistics.get("capm_interest")
+            capm_str = f"{capm:.1f}%" if capm and not np.isnan(capm) else "N/A"
+            capm_lbl = QLabel(f"CAPM: {capm_str}  |  RFR: {rfr:.1f}%  |  Mkt: {mkt:.1f}%")
+        except Exception as e:
+            capm_lbl = QLabel(f"CAPM: unavailable ({e})")
+        capm_lbl.setStyleSheet("font-size: 11px; color: gray;")
+        self.controls_layout.addWidget(capm_lbl)
+
+        # Add BV checkbox
+        self.add_bv_checkbox = QCheckBox("Add Book Value")
+        self.add_bv_checkbox.setChecked(True)
+        self.controls_layout.addWidget(self.add_bv_checkbox)
+
+        # Result label
+        self.result_label = QLabel("")
+        self.controls_layout.addWidget(self.result_label)
+
         # GO Button
         self.go_button = QPushButton("GO")
-        layout.addWidget(self.go_button)
+        self.controls_layout.addWidget(self.go_button)
         self.go_button.clicked.connect(self.handle_go_press)
 
+        self.controls_layout.addStretch()
+
     def handle_go_press(self):
-        args_iir = {  # todo what about discount_rate and price target
+        benchmark = self.growth_benchmark_group.checkedButton().text()
+        stats = self.ticker.statistics
+        if benchmark == "Book Value":
+            growth_rate = stats["bv_growth_rate"]
+        elif benchmark == "Earnings":
+            growth_rate = stats["growth_rate"]
+        elif benchmark == "Revenue":
+            growth_rate = stats["revenue_growth_rate"]
+        elif benchmark == "FCF":
+            raise NotImplementedError("FCF growth rate is not yet tracked separately")
+        else:  # Custom
+            growth_rate = float(self.custom_growth_input.text())
+
+        is_linear = self.trend_group.checkedButton().text() == "Linear"
+
+        if is_linear and benchmark != "Earnings":
+            raise NotImplementedError("Linear growth is only supported with Earnings benchmark")
+
+        args_iir = {
             "forward_to_present": True,
-            "use_bv_growth": self.growth_benchmark_group.checkedButton().text() == "Book Value",  # todo handle all other benchmarks
-            "add_bv": True,  # todo add to dialog
-            "short_term_is_linear": self.trend_group.checkedButton().text() == "Linear",
+            "growth_rate": growth_rate,
+            "add_bv": self.add_bv_checkbox.isChecked(),
+            "short_term_is_linear": is_linear,
             "long_growth_duration": 0 if self.perpetuity_group.checkedButton().text() == "Nothing" else -1,
             "forecasted_number_years_of_growth": int(self.growth_time_input.text()),
             "maximal_long_term_growth_rate": float(self.perpetuity_growth_input.text()) / 100 if self.perpetuity_group.checkedButton().text() == "Slow Exponent" else 0,
         }
         print(args_iir)
-        price_target, iir = self.ticker._calc_dcf_intrinsic_values(discount_rate=0.01, **args_iir)
+        price_target, iir = self.ticker._calc_dcf_intrinsic_values(
+            discount_rate=float(self.discount_rate_input.text()) / 100, **args_iir)
         print(iir)
+        is_linear = self.trend_group.checkedButton().text() == "Linear"
+        if is_linear:
+            growth_str = "Linear (trend: {:.0f} $/yr)".format(
+                self.ticker.statistics["earnings_yearly_trend"])
+        else:
+            growth_str = "Exponential ({:.1f}%)".format(growth_rate)
 
-
+        self.result_label.setText(
+            "Growth: {}\nPrice Target: {:.2f}\nIRR: {:.2f}%".format(growth_str, price_target, iir))
 
 
 if __name__ == '__main__':
@@ -106,5 +177,3 @@ if __name__ == '__main__':
     ex = GrowthApp()
     ex.show()
     sys.exit(app.exec_())
-
-

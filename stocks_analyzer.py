@@ -15,11 +15,10 @@ import multiprocessing as mp
 # to have colored output
 from colorama import Fore, Back, Style
 
-# make warning throw exceptions
+# make warning throw exceptions only inside worker processes (not globally)
 # this is important when using Threads to avoid having writing to
 # stderr in parallel. The warnings would need to be caught explicitly so
 # that they wouldn't be missed
-warnings.simplefilter('error')
 
 
 class tickerWorkerStatus():
@@ -68,6 +67,7 @@ class tickerWorkerStatus():
 # TODO: replace all silly prints with proper log functions that indicate an
 #   error
 def create_ticker_worker(ticker_queue_tuple):
+    warnings.simplefilter('error')  # scoped to this worker process only
 
     # the multiproccesing will hide any uncatched exception, so wrapping the whole function in a general try statement
     try:
@@ -112,6 +112,11 @@ def create_tickers_from_symbol_names(symbol_list):
     """ Get a list of tuples that contain symbol ticker name and its
         stock exchange. Return a list of class Ticker that represent each of the
         stocks"""
+    # pre-fetch market data in the main process so forked workers inherit the cache
+    from ticker import market_data
+    market_data.get_risk_free_rate()
+    market_data.get_market_return()
+
     symbols_nr = len(symbol_list)
     symbol_ix   = 0
     LONGEST_PROGRESS_STRING = len("99.99% [{} / {}]".format(symbols_nr, symbols_nr)) +\
@@ -261,6 +266,7 @@ tldr_statistics = [  # a less overwhelming set of statistics
             "revenue_growth_rate",
             "healthy",
             "overvalued",
+            "leveraged",
             "updated at",
         ]
 
@@ -278,7 +284,6 @@ def select_stocks_file(parent_widget=None) -> str :
 
 def main():
     app = QApplication(sys.argv)
-    warnings.simplefilter('error')
 
     # 1) Create 'Ticker' variable for every symbol
     # 2) store result in some list

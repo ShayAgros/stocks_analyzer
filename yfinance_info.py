@@ -118,8 +118,8 @@ class YahooInfo:
     def pre_pickle(self):
         self.yf_ticker = None
 
-    def post_pickle(self):
-        self.yf_ticker = yf.Ticker(self.full_symbol)
+    def post_pickle(self, yf_ticker=None):
+        self.yf_ticker = yf_ticker if yf_ticker else yf.Ticker(self.full_symbol)
 
     def __init__(self, symbol, market, *, yf_info = None):
         self.full_symbol, self.market_endian = get_ticker_from_standard_symbols(symbol, market)

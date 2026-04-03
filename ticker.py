@@ -26,6 +26,38 @@ cache_file_name = "{symbol}-{market}.pkl"
 
 forcast_growth_field = "irr[%]"  # todo, make it dynamic
 
+
+class MarketDataCache:
+    """Caches risk-free rate (^TNX) and S&P500 1yr return with a 1-hour TTL."""
+    _TTL = 3600
+
+    def __init__(self):
+        self._cache = {"rfr": (None, 0), "mkt": (None, 0)}
+
+    def _get(self, key, fetch_fn):
+        import time
+        value, ts = self._cache[key]
+        if value is None or time.time() - ts > self._TTL:
+            value = fetch_fn()
+            self._cache[key] = (value, time.time())
+        return value
+
+    def get_risk_free_rate(self) -> float:
+        return self._get("rfr", lambda: YahooInfo("%5ETNX", "NASDAQ").get_stock_price_now() / 100)
+
+    def get_market_return(self) -> float:
+        import datetime
+        def fetch():
+            spx = YahooInfo("%5EGSPC", "NASDAQ")
+            d = datetime.date.today() - datetime.timedelta(days=365)
+            old = spx.get_stock_price_at_date(d.day, d.month, d.year)
+            return (spx.get_stock_price_now() - old) / old
+        return self._get("mkt", fetch)
+
+
+market_data = MarketDataCache()
+
+
 class StatisticsException(Exception):
     """Exceptions that are thrown during the Ticker statistics calculation.
         This will happen mostly due to a bug"""
@@ -345,7 +377,7 @@ class Ticker:
         """ a wrapper of _calc_dcf_intrinsic_values for the gui part (with current price) """
         _, irr = self._calc_dcf_intrinsic_values(forward_to_present=True)
         _, linear_irr = self._calc_dcf_intrinsic_values(
-            use_bv_growth=False,
+            growth_rate=self.statistics["growth_rate"],
             forward_to_present=True,
             short_term_is_linear=True,
             long_growth_duration=0,
@@ -377,8 +409,18 @@ class Ticker:
         statistics["intrinsic_value_dcf"], statistics["irr[%]"] = self._calc_dcf_intrinsic_values()
         statistics["dcf_discount_ratio"] = 100 * (statistics["intrinsic_value_dcf"] - stock_price) / stock_price
 
+        # --- capm ---
+        beta = statistics.get("beta")
+        if beta is not None and not np.isnan(beta):
+            rfr = market_data.get_risk_free_rate()
+            mkt = market_data.get_market_return()
+            capm_rate = rfr + beta * (mkt - rfr)
+            statistics["capm_interest"] = capm_rate * 100
+            statistics["capm_npv"] = self._get_calc_npv()(capm_rate)
+            statistics["capm_discount_ratio"] = 100 * (statistics["capm_npv"] - stock_price) / stock_price
+
     def _get_calc_npv(self,
-                   use_bv_growth=True,
+                   growth_rate=None,
                    add_bv=True,
                    forward_to_present=False,
                    short_term_is_linear=False,
@@ -398,12 +440,10 @@ class Ticker:
         last_annual_date = statistics["updated at"]
         diluted_shares = statistics["shares (diluted)"]
 
-        if use_bv_growth:
-            forcasted_short_term_growth_rate = statistics[
-                                                   "bv_growth_rate"] / 100  # how we remove stocks sale from value?
+        if growth_rate is not None:
+            forcasted_short_term_growth_rate = growth_rate / 100
         else:
-            forcasted_short_term_growth_rate = statistics[
-                                                   "growth_rate"] / 100  # in the video he used a simple root calculation
+            forcasted_short_term_growth_rate = statistics["growth_rate"] / 100
         forcasted_long_term_growth_rate = np.min([maximal_long_term_growth_rate, forcasted_short_term_growth_rate])
         # estimation for the first next cashflow (multiply in the growth rate once)
         average_annual_free_cash_flow = np.mean(
@@ -500,13 +540,10 @@ class Ticker:
 
         self.statistics["healthy"] = (self.statistics["eps"] > 0 and
                                       self.statistics["book_value"] > 0 and
-                                      self.statistics["debt_to_equity"] < 3.2 and
                                       self.statistics["earnings_yearly_trend"] > 0 and
                                       self.statistics["equity_yearly_trend"] > 0 and
                                       self.statistics["operating_cf_yearly_trend"] > 0 and
-                                      self.statistics["non_operating_cf_yearly_trend"] < 0 and
                                       self.statistics["revenues_yearly_trend"] > 0 and
-                                      self.statistics["maximal_non_operating_cf"] < 0 and  # too restrictive
                                       self.statistics["minimal_operating_cf"] > 0 and
                                       self.statistics["roe[%]"] >= 10 and
                                       self.statistics["roa[%]"] >= 3 and
@@ -515,14 +552,23 @@ class Ticker:
                                       self.statistics["revenue_growth_rate"] >= 1.7
                                       )
 
+        self.statistics["leveraged"] = (self.statistics["debt_to_equity"] > 3.2 or
+                                        self.statistics["non_operating_cf_yearly_trend"] > 0 or
+                                        self.statistics["maximal_non_operating_cf"] > 0  # too restrictive
+                                        )
+
         self.statistics["overvalued"] = (self.statistics["pe*bv"] >= 100 or
                                          self.statistics["naive_time_to_profit"] >= 20 or
                                          self.statistics["irr[%]"] < 10 or
                                          self.statistics["basic_discount_ratio"] < -1
                                          )
+        # TODO: add a current ratio metric for credit obligations?
+
 
     @staticmethod
-    def get_cache(symbol, market):
+    def get_cache(symbol, market, yf_ticker=None):
+        symbol = symbol.upper()
+        market = market.upper()
         symbol_file_name = cache_file_name.format(symbol=symbol, market=market)
         cache_file = os.path.join(tickers_dir, symbol_file_name)
 
@@ -532,20 +578,20 @@ class Ticker:
 
         # if old, ignore cache
         if not os.path.isfile(cache_file) or get_seconds_from_now(cache_file) > 3600 * 24 * 30:  # 30 days
-            return Ticker(symbol, market)
+            return Ticker(symbol, market, yf_info=yf_ticker)
         try:
             with open(cache_file, 'rb') as file:
-                return pickle.load(file).post_pickle()
+                return pickle.load(file).post_pickle(yf_ticker=yf_ticker)
         except FileNotFoundError:
-            return Ticker(symbol, market)
+            return Ticker(symbol, market, yf_info=yf_ticker)
 
 
     def pre_pickle(self):
         self.reports.pre_pickle()
         self.yahoo_info.pre_pickle()
 
-    def post_pickle(self):
-        self.yahoo_info.post_pickle()
+    def post_pickle(self, yf_ticker=None):
+        self.yahoo_info.post_pickle(yf_ticker)
         self.reports.post_pickle(self.yahoo_info.yf_ticker)
         return self
 
@@ -555,8 +601,12 @@ class Ticker:
             cache_file = os.path.join(tickers_dir, symbol_file_name)
             os.makedirs(tickers_dir, exist_ok=True)
             with open(cache_file, 'wb') as file:
+                yf_ticker = self.yahoo_info.yf_ticker
                 self.pre_pickle()
                 pickle.dump(self, file)
+                self.post_pickle(yf_ticker)
+                
+            
         except TypeError:
             print("Ticker.py: warnning: failed to save cache, probably yf_ticker object")
 
@@ -617,8 +667,13 @@ class Ticker:
             "net_income": self.reports.get_last_report("annual", "income_statement")["Net Income"],
             "healthy": None,
             "overvalued": None,
+            "leveraged": None,
             "sector": self.yahoo_info.info.get("sector"),
             "industry": self.yahoo_info.info.get("industry"),
+            "beta": self.yahoo_info.info.get("beta"),
+            "capm_interest": None,
+            "capm_npv": None,
+            "capm_discount_ratio": None,
             "price on update": None,
             "eps": None,
             "book_value": None,
@@ -661,9 +716,9 @@ class Ticker:
         prices = [self.yahoo_info.get_stock_price_at_date(date["day"], date["month"], date["year"]) for date in dates]
         return prices
 
-    def plot_me(self):
+    def plot_me(self, show=True):
         fig = plt.figure()
-        gs = fig.add_gridspec(3, 2)
+        gs = fig.add_gridspec(4, 2)
 
         # 00 - Book Value
         ax = fig.add_subplot(gs[0, 0])
@@ -682,9 +737,9 @@ class Ticker:
         ax = fig.add_subplot(gs[0, 1])
         label = "eps"
         earnings = np.array(self.reports.get_field_as_list("income_statement", "annual", "Net Income", add_ttm=True))
-        values = earnings / quantity
+        eps = earnings / quantity
         format_axis(ax)
-        ax.plot(times, values, '-', label=label)
+        ax.plot(times, eps, '-', label=label)
         ax.legend(framealpha=0.4)
 
         # 10 - {Free, Operating} Cash Flow
@@ -710,8 +765,28 @@ class Ticker:
         ax.plot(times, prices, '-', label=label)
         ax.legend(framealpha=0.4)
 
+        # 21 - PE Ratio & Annual Earnings Growth Rate
+        ax = fig.add_subplot(gs[2, 1])
+        format_axis(ax)
+        label = "PE"
+        pe_ratios = prices / eps 
+        ax.plot(times, pe_ratios, '-', label=label)
+        ax.legend(framealpha=0.4)
+
+        ax2 = ax.twinx()
+        label = "EPS Growth"
+        times = np.array(times)
+        time_for_deltas = times[1:]
+        dt = np.array(times[1:] - times[:-1], dtype='timedelta64[D]')
+        dt = dt / np.timedelta64(1, 'D') / 365.25
+        de = eps[1:] / eps[:-1]
+        growths = de ** (1 / dt)
+        growths = (growths - 1) * 100
+        ax2.plot(time_for_deltas, growths, label=label, color="C1")
+        ax2.legend(framealpha=0.4)
+
         # wide price graph
-        ax = fig.add_subplot(gs[2, :])
+        ax = fig.add_subplot(gs[-1, :])
         format_axis(ax)
         # label = "price"
         # ax.plot(times, prices, '-', label=label)  # for offline testing
@@ -730,13 +805,16 @@ class Ticker:
                                                           mdates.num2date(to_date).replace(tzinfo=None)),
                                                       'horizontal', props=rectprops, useblit=True)
 
-        #
-        fig.set_tight_layout(True)
-        fig.suptitle(self.symbol + "({:,.2f}): {:.1f}% L {:.1f}%, {:.1f}".format(
-            self.yahoo_info.get_stock_price_now(), *(self.get_irr()), self.get_projected_pe()))
-        fig.canvas.manager.set_window_title(self.symbol)
+        ax.set_xlim((self._price_series.index[0], self._price_series.index[-1]))
 
-        plt.show()
+        fig.set_layout_engine('tight')
+        fig.suptitle(self.symbol + "({:,.2f}): IRR {:.1f}% L {:.1f}%, PE {:.1f}".format(
+            self.yahoo_info.get_stock_price_now(), *(self.get_irr()), self.get_projected_pe()))
+
+        if show:
+            plt.show()
+        else:
+            return fig
 
     def show_delta(self, from_date, to_date):
         """ called by the mpl widget to inspect price growth """
@@ -746,8 +824,8 @@ class Ticker:
         timezone = index.tzinfo
         from_date = timezone.localize(from_date)
         to_date = timezone.localize(to_date)
-        start_price = self._price_series.loc[index[index.get_indexer([from_date], method="nearest")]][0]
-        end_price = self._price_series.loc[index[index.get_indexer([to_date], method="nearest")]][0]
+        start_price = self._price_series.loc[index[index.get_indexer([from_date], method="nearest")]].iloc[0]
+        end_price = self._price_series.loc[index[index.get_indexer([to_date], method="nearest")]].iloc[0]
         change = (end_price - start_price) / start_price
         # not the real time delta if the market was closed
         days = (to_date - from_date).days
@@ -875,7 +953,7 @@ class TickerGroup(YahooGroup):
         for symbol, market, full_symbol in zip(self.symbols, self.markets, self.full_symbols):
             if not self.use_past_growth or not yahoo_symbol_is_index(symbol):
                 if (symbol,market) not in self.tickers_dictionary:
-                    self.tickers_dictionary[(symbol,market)] = Ticker(symbol, market, yf_info=self.yf_ticker.tickers[full_symbol])
+                    self.tickers_dictionary[(symbol,market)] = Ticker.get_cache(symbol, market, yf_ticker=self.yf_ticker.tickers[full_symbol])
                 self.annual_growth_forecasts.append(self.tickers_dictionary[(symbol,market)].get_forecasted_annual_growth())
             else:
                 self.annual_growth_forecasts.append(self.get_past_annual_performance(symbol,market))
@@ -892,7 +970,7 @@ class TickerGroup(YahooGroup):
     def create_frontier(self):
         print("EF")
         named_growth = pd.Series(data=self.annual_growth_forecasts, index=self.symbols)
-        self.efficient_frontier = EfficientFrontier(named_growth, self.cov, verbose=True, solver="OSQP")  # todo 
+        self.efficient_frontier = EfficientFrontier(named_growth, self.cov, solver="OSQP")  # , verbose=True # todo 
 
     def optimize(self, ax1=None, ax2=None):
         print("risk_free_rate: %s" % self.risk_free_rate)
@@ -917,7 +995,7 @@ class TickerGroup(YahooGroup):
         plotting.plot_efficient_frontier(self.efficient_frontier.deepcopy(), ax=ax, ef_param="return", show_assets=True, show_tickers=True)
         ax.set_title("Efficient Frontier")
         ax.legend()
-        plt.tight_layout()
+        ax.get_figure().set_layout_engine('tight')
         return ax
 
     def plot_tangency(self, ax1, ax2=None):
@@ -961,9 +1039,134 @@ class Portfolio(TickerGroup):
         self.portfolio_std = np.sqrt(self.weights.T @ self.cov @ self.weights)
         # todo: if we want to have beta/covariance of the portfolio, we will need to avarage also the historical prices data
 
+    def plot_pie(self, ax=None):
+        if not ax:
+            _, ax = plt.subplots()
+        ax.pie(self.weights, labels=self.symbols)
+
+    def plot_concentric_pie(self, ax=None):
+        """Two pies: left=tickers sorted by sector, right=sector+industry concentric."""
+        if ax is None:
+            _, (ax_tickers, ax_sectors) = plt.subplots(1, 2)
+        else:
+            # ax is expected to be a tuple (ax_tickers, ax_sectors)
+            ax_tickers, ax_sectors = ax
+
+        # build per-ticker metadata
+        data = []
+        for sym, mkt, w in zip(self.symbols, self.markets, self.weights):
+            t = self.tickers_dictionary.get((sym, mkt))
+            sector = (t.statistics.get("sector") or "Unknown") if t else "Unknown"
+            industry = (t.statistics.get("industry") or "Unknown") if t else "Unknown"
+            data.append((sector, industry, sym, w))
+
+        data.sort(key=lambda x: (x[0], x[1]))
+        sectors_sorted   = [d[0] for d in data]
+        industries_sorted = [d[1] for d in data]
+        symbols_sorted   = [d[2] for d in data]
+        weights_sorted   = [d[3] for d in data]
+
+        # collapse consecutive runs for industry/sector rings
+        industry_slices, sector_slices = [], []
+        for ind, sec, w in zip(industries_sorted, sectors_sorted, weights_sorted):
+            if industry_slices and industry_slices[-1][0] == ind:
+                industry_slices[-1] = (ind, industry_slices[-1][1] + w)
+            else:
+                industry_slices.append((ind, w))
+            if sector_slices and sector_slices[-1][0] == sec:
+                sector_slices[-1] = (sec, sector_slices[-1][1] + w)
+            else:
+                sector_slices.append((sec, w))
+
+        import colorsys
+        cmap = plt.get_cmap("tab10")
+        n_sec = len(sector_slices)
+        sec_color = {s[0]: cmap(i / max(n_sec, 1)) for i, s in enumerate(sector_slices)}
+
+        # --- left pie: tickers get matplotlib default colors ---
+        ax_tickers.pie(weights_sorted, labels=symbols_sorted,
+                       wedgeprops=dict(edgecolor='w'),
+                       labeldistance=0.6)
+        ax_tickers.set_title("Tickers")
+
+        # --- right pie: industry (outer) = shades of sector color, sector (inner) = base color ---
+        # count industries per sector to vary lightness
+        sec_industry_idx = {}
+        sec_industry_count = {}
+        for s in industry_slices:
+            ind = s[0]
+            sec = sectors_sorted[[i for i, x in enumerate(industries_sorted) if x == ind][0]]
+            sec_industry_count[sec] = sec_industry_count.get(sec, 0) + 1
+        for sec in sec_industry_count:
+            sec_industry_idx[sec] = 0
+
+        mid_colors = []
+        for s in industry_slices:
+            ind = s[0]
+            sec = sectors_sorted[[i for i, x in enumerate(industries_sorted) if x == ind][0]]
+            base = sec_color[sec][:3]
+            total = sec_industry_count[sec]
+            idx = sec_industry_idx[sec]
+            factor = 0.35 + 0.5 * (idx / max(total - 1, 1))
+            h, l, sat = colorsys.rgb_to_hls(*base)
+            mid_colors.append(colorsys.hls_to_rgb(h, factor, sat))
+            sec_industry_idx[sec] += 1
+
+        ax_sectors.pie([s[1] for s in industry_slices],
+                       labels=[s[0] for s in industry_slices],
+                       radius=1.0, colors=mid_colors,
+                       wedgeprops=dict(width=0.4, edgecolor='w'),
+                       labeldistance=0.8)
+        ax_sectors.pie([s[1] for s in sector_slices],
+                       labels=[s[0] for s in sector_slices],
+                       radius=0.6, colors=[sec_color[s[0]] for s in sector_slices],
+                       wedgeprops=dict(width=0.6, edgecolor='w'),
+                       labeldistance=0.8)
+        ax_sectors.set_title("Sector / Industry")
+
+        # --- hover tooltip showing percentage ---
+        fig = ax_tickers.get_figure()
+        annot = fig.text(0, 0, "", va="bottom", ha="left",
+                         bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.8),
+                         visible=False)
+
+        all_wedges = [w for ax in (ax_tickers, ax_sectors)
+                      for w in ax.patches if hasattr(w, 'get_label')]
+
+        def on_hover(event):
+            visible = False
+            for wedge in all_wedges:
+                if wedge.contains(event)[0]:
+                    pct = wedge.theta2 - wedge.theta1
+                    pct_val = pct / 360 * 100
+                    label = wedge.get_label()
+                    annot.set_text(f"{label}: {pct_val:.1f}%")
+                    annot.set_position((event.x / fig.get_size_inches()[0] / fig.dpi,
+                                        event.y / fig.get_size_inches()[1] / fig.dpi))
+                    visible = True
+                    break
+            annot.set_visible(visible)
+            fig.canvas.draw_idle()
+
+        fig.canvas.mpl_connect('motion_notify_event', on_hover)
+
+        # store ticker wedges for double-click handling
+        self._ticker_wedges = list(zip(ax_tickers.patches, symbols_sorted))
+
     def plot_portfolio(self, ax=None):
         ax = self.plot_frontier(ax=ax)
         ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast, 'ro')
+
+    def to_df(self) -> pd.DataFrame:
+        """Return a statistics DataFrame in the same format as stocks_analyzer.ticker_list_to_df()."""
+        tickers = []
+        for sym, mkt, full_sym in zip(self.symbols, self.markets, self.full_symbols):
+            if (sym, mkt) not in self.tickers_dictionary:
+                self.tickers_dictionary[(sym, mkt)] = Ticker.get_cache(
+                    sym, mkt, yf_ticker=self.yf_ticker.tickers[full_sym])
+            tickers.append(self.tickers_dictionary[(sym, mkt)])
+        d = {f"{t.symbol}:{t.market}": t.statistics.values() for t in tickers}
+        return pd.DataFrame.from_dict(d, orient='index', columns=tickers[0].statistics.keys())
 
 
 class HistoricPortfolio(Portfolio):
@@ -976,5 +1179,8 @@ class HistoricPortfolio(Portfolio):
 
 
 if __name__ == '__main__':
-    #Ticker.get_cache("AVGO", "NASDAQ").plot_me()
+    # ticker_name = input("Ticker Name: ")
+    # stock_exchange = input("Stock Exchange: ")
+
+    # Ticker.get_cache(ticker_name, stock_exchange).plot_me()
     Portfolio(["msft", "brk.b"], ["nasdaq", "nyse"], [10, 2])
