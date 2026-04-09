@@ -94,10 +94,11 @@ def search_growth(npv_function, price, min_growth, max_growth=1, delta_growth=0.
         try:
             with warnings.catch_warnings(record=True) as w:
                 warnings.filterwarnings("error")
-                npv = npv_function(growth)
+                with np.errstate(all='ignore'):
+                    npv = npv_function(growth)
         except Exception:
             npv = np.nan
-        if npv is None or np.isnan(npv):
+        if npv is None or np.isnan(npv) or not np.isfinite(npv):
             skipped += 1
             continue
         error = np.abs(npv - price)
@@ -939,8 +940,6 @@ class TickerGroup(YahooGroup):
         markets = [m.upper() for m in markets]
         super().__init__(symbols, markets)
         self.risk_free_rate = risk_free_rate
-        self.symbols = symbols
-        self.markets = markets
         self.portfolio_std = np.nan
         self.tickers_dictionary = existing_tickers  # dict[(symbol,market)] will hold the ticker, will be used for get_forcasted_monthly_growth(), otherwise use past growth
         self.use_past_growth = use_past_growth
@@ -956,7 +955,12 @@ class TickerGroup(YahooGroup):
         for symbol, market, full_symbol in zip(self.symbols, self.markets, self.full_symbols):
             if not self.use_past_growth or not yahoo_symbol_is_index(symbol):
                 if (symbol,market) not in self.tickers_dictionary:
-                    self.tickers_dictionary[(symbol,market)] = Ticker.get_cache(symbol, market, yf_ticker=self.yf_ticker.tickers[full_symbol])
+                    try:
+                        self.tickers_dictionary[(symbol,market)] = Ticker.get_cache(symbol, market, yf_ticker=self.yf_ticker.tickers[full_symbol])
+                    except Exception as e:
+                        print(f"Warning: skipping {symbol}:{market} in growth forecast: {e}")
+                        self.annual_growth_forecasts.append(float('nan'))
+                        continue
                 self.annual_growth_forecasts.append(self.tickers_dictionary[(symbol,market)].get_forecasted_annual_growth())
             else:
                 self.annual_growth_forecasts.append(self.get_past_annual_performance(symbol,market))
@@ -972,8 +976,9 @@ class TickerGroup(YahooGroup):
 
     def create_frontier(self):
         print("EF")
-        named_growth = pd.Series(data=self.annual_growth_forecasts, index=self.symbols)
-        self.efficient_frontier = EfficientFrontier(named_growth, self.cov, verbose=False)  # , verbose=True # todo 
+        named_growth = pd.Series(data=self.annual_growth_forecasts, index=self.full_symbols)
+        named_growth = named_growth[self.valid_full_symbols].fillna(0)
+        self.efficient_frontier = EfficientFrontier(named_growth, self.cov, verbose=False, solver="ECOS")  # todo: understand why this solver works when the default failed
 
     def optimize(self, ax1=None, ax2=None):
         print("risk_free_rate: %s" % self.risk_free_rate)

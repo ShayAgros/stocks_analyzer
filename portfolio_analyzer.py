@@ -4,22 +4,6 @@ from matplotlib import pyplot as plt
 from yfinance_info import YahooInfo
 from ticker import TickerGroup, search_growth, Ticker
 from portfolio import Portfolio, PortfolioGui
-
-
-class HistoricPortfolioGui(PortfolioGui):
-    def __init__(self, portfolio, perf_df, portfolio_irr, money_invested, portfolio_value,
-                 index_name, index_irr, index_value, show_frontier=False):
-        super().__init__(portfolio, show_frontier)
-        summary = (
-            "Portfolio:  {:.2f} -> {:.2f}\n"
-            "            {:.2f}% / yr\n\n"
-            "{}:  {:.2f} -> {:.2f}\n"
-            "            {:.2f}% / yr"
-        ).format(money_invested, portfolio_value, portfolio_irr,
-                 index_name, money_invested, index_value, index_irr)
-        self.set_summary(summary, perf_df)
-
-
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
@@ -39,12 +23,20 @@ Ticker	Market	Date	Amount	BuyNotSell	Cost
 sep  = "\t"
 comment = "#"
 frmt = "%Y-%m-%d"  # T%H:%M:%S"
-read_tsv = lambda file: pd.read_csv(file, sep=sep, comment=comment, skip_blank_lines=True)
+def read_tsv(file):
+    import io
+    with open(file) as f:
+        lines = [l for l in f if not l.lstrip().startswith('#') and l.strip()]
+    return pd.read_csv(io.StringIO("".join(lines)), sep=sep)
 
 
 def get_buy_amount(df):
-    buy_sign = df["BuyNotSell"] * 2 - 1
-    buy_amount = buy_sign * df["Amount"]
+    if "BuyNotSell" in df.index:
+        buy_sign = df["BuyNotSell"] * 2 - 1
+    else:
+        buy_sign = 1
+    amount = df["Amount"] if "Amount" in df.index else 0
+    buy_amount = buy_sign * amount
     return buy_amount
 
 
@@ -137,6 +129,20 @@ def get_index(table):
     table["Market"] = index_market
     return index_name, table
 
+
+class HistoricPortfolioGui(PortfolioGui):
+    def __init__(self, portfolio, perf_df, portfolio_irr, money_invested, portfolio_value,
+                 index_name, index_irr, index_value, show_frontier=False):
+        super().__init__(portfolio, show_frontier)
+        summary = (
+            "Portfolio:  {:.2f} -> {:.2f}\n"
+            "            {:.2f}% / yr\n\n"
+            "{}:  {:.2f} -> {:.2f}\n"
+            "            {:.2f}% / yr"
+        ).format(money_invested, portfolio_value, portfolio_irr,
+                 index_name, money_invested, index_value, index_irr)
+        self.set_summary(summary, perf_df)
+
 # Future estimate:
 
 
@@ -148,22 +154,30 @@ if __name__ == '__main__':
     apply_stylesheet(app, theme='dark_red.xml')
 
     file = "test_inputs/Portfolio1.tsv"
+    #file = "test_inputs/my_stocks.tsv"
     run_portfolio_optimization = True
 
     table = read_tsv(file)
-    portfolio_irr = get_performance(table)
-    _, portfolio_value, money_invested, _ = get_get_npv(table)
-    index_name, index_table = get_index(table)
-    index_irr = get_performance(index_table)
-    _, index_value, _, _ = get_get_npv(index_table)
     portfolio = create_portfolio(table)
-    perf_df = performance_per_ticker(table, portfolio)
+
+    do_historic_analysis = "Date" in table.columns
+    if do_historic_analysis:
+        portfolio_irr = get_performance(table)
+        _, portfolio_value, money_invested, _ = get_get_npv(table)
+        index_name, index_table = get_index(table)
+        index_irr = get_performance(index_table)
+        _, index_value, _, _ = get_get_npv(index_table)
+        perf_df = performance_per_ticker(table, portfolio)
 
     if run_portfolio_optimization:
         portfolio.calculate_correlation()
 
-    gui = HistoricPortfolioGui(portfolio, perf_df, portfolio_irr, money_invested, portfolio_value,
+    if do_historic_analysis:
+        gui = HistoricPortfolioGui(portfolio, perf_df, portfolio_irr, money_invested, portfolio_value,
                        index_name, index_irr, index_value, run_portfolio_optimization)
+    else:
+        gui = PortfolioGui(portfolio, run_portfolio_optimization)
+    
     gui.show()
     sys.exit(app.exec_())
 

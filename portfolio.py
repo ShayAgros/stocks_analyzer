@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton
 from PyQt5.QtCore import Qt
 
@@ -34,12 +35,28 @@ class Portfolio(TickerGroup):
     def calculate_correlation(self):
         super().calculate_correlation()
         self.portfolio_annual_growth_forecast = np.dot(self.weights, self.annual_growth_forecasts)
-        self.portfolio_std = np.sqrt(self.weights.T @ self.cov @ self.weights)
+        valid_mask = np.array([f in self.valid_full_symbols for f in self.full_symbols])
+        # 1st calculate the portfolio weights discarding all the non valid covariance tickers (Todo its dangerous to say its real)
+        weights = self.weights[valid_mask]
+        weights = weights / np.sum(weights)
+        self.portfolio_std = np.sqrt(weights.T @ self.cov @ weights)
 
     def plot_pie(self, ax=None):
         if not ax:
             _, ax = plt.subplots()
         ax.pie(self.weights, labels=self.symbols)
+
+    def get_weighted_stats(self):
+        """PE = weighted_sum(price) / weighted_sum(eps), ROE = weighted_sum(eps) / weighted_sum(bv)"""
+        total_price, total_eps, total_bv = 0.0, 0.0, 0.0
+        for (sym, mkt), w in self.weights_dict.items():
+            t = self.tickers_dictionary[(sym, mkt)]
+            total_eps += w * t.statistics["eps"]
+            total_bv += w * t.statistics["book_value"]
+            total_price += w * t.statistics["price on update"]
+        pe = total_price / total_eps
+        roe = (total_eps / total_bv * 100)
+        return pe, roe
 
     def plot_concentric_pie(self, ax=None):
         """Two pies: left=tickers sorted by sector, right=sector+industry concentric."""
@@ -173,7 +190,11 @@ class PortfolioGui(QWidget):
             growth_mode = "Past Growth" if portfolio.use_past_growth else "DCF Forecast"
             ax.set_ylabel("Expected Return (%s)" % growth_mode)
             ax.grid(True)
-            root.addWidget(FigureCanvas(fig_frontier), stretch=3)
+            canvas = FigureCanvas(fig_frontier)
+            frontier_layout = QVBoxLayout()
+            frontier_layout.addWidget(canvas)
+            frontier_layout.addWidget(NavigationToolbar(canvas, self))
+            root.addLayout(frontier_layout, stretch=3)
 
         self._stats_layout = QVBoxLayout()
         self._stats_layout.setAlignment(Qt.AlignTop)
@@ -183,12 +204,25 @@ class PortfolioGui(QWidget):
         self._summary_lbl.setStyleSheet("font-size: 14px; padding: 8px;")
         self._stats_layout.addWidget(self._summary_lbl)
 
+        # portfolio stats
+        try:
+            pe, roe = portfolio.get_weighted_stats()
+            stats_text = "PE: {:.1f}  |  ROE: {:.1f}%".format(pe, roe)
+        except Exception as e:
+            stats_text = "PE/ROE: unavailable ({})".format(e)
+        self._stats_lbl = QLabel(stats_text)
+        self._stats_lbl.setStyleSheet("font-size: 12px; padding: 4px; color: gray;")
+        self._stats_layout.addWidget(self._stats_lbl)
+
         btn = QPushButton("Open Screener")
         btn.clicked.connect(self._open_screener)
         self._stats_layout.addWidget(btn)
 
         fig_pie, (ax_t, ax_s) = plt.subplots(1, 2)
-        portfolio.plot_concentric_pie(ax=(ax_t, ax_s))
+        try:
+            portfolio.plot_concentric_pie(ax=(ax_t, ax_s))
+        except Exception as e:
+            ax_t.text(0.5, 0.5, f"Pie unavailable:\n{e}", ha='center', va='center', transform=ax_t.transAxes)
         self._stats_layout.addWidget(FigureCanvas(fig_pie))
 
         def on_pie_dblclick(event):

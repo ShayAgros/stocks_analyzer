@@ -2,6 +2,8 @@
 
 import yfinance as yf
 import datetime
+import numpy as np
+from pypfopt.risk_models import fix_nonpositive_semidefinite
 
 
 class YfinanceException(Exception):
@@ -135,8 +137,10 @@ class YahooInfo:
 class YahooGroup:
     """ Get prices synchronised. tested only with same currency """
     def __init__(self, symbols: list, markets: list):
-        self.full_symbols = list()
+        self.symbols = symbols
+        self.markets = markets
         self.history = None
+        self.full_symbols = list()
         for i in range(len(symbols)):
             self.full_symbols.append(get_ticker_from_standard_symbols(symbols[i], markets[i])[0])
         self.yf_ticker = yf.Tickers(" ".join(self.full_symbols))
@@ -153,6 +157,7 @@ class YahooGroup:
         """
         if self.history is None:
             self.history = self.yf_ticker.history(period="10y")["Close"].iloc[::30]  # todo better implement period & interval (more years and real months?, maybe add overlaps)
+            self.valid_full_symbols = self.history.columns[self.history.notna().mean() >= 0.8].tolist()
 
     def get_monthly_growths(self):
         p1 = self.history[1:]
@@ -166,7 +171,10 @@ class YahooGroup:
         return (1 + monthly) ** 12 - 1
 
     def get_cov(self):
-        self.cov = self.get_monthly_growths().cov().values * 12  # multiply by 12 to convert from monthly to annual variance
+        monthly = self.get_monthly_growths()
+        cov = monthly[self.valid_full_symbols].cov() * 12  # multiply by 12 to convert from monthly to annual variance
+        cov = fix_nonpositive_semidefinite(cov)
+        self.cov = cov.values
 
     # -----------------------------------------------------------------------------
 
@@ -175,9 +183,6 @@ class YahooGroup:
         without caching, as the price continue to change"""
         todays_data = self.yf_ticker.history(period='1d')
         return todays_data['Close'].iloc[0]
-
-
-
 
 
 
