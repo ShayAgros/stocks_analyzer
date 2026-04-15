@@ -31,12 +31,9 @@ def read_tsv(file):
 
 
 def get_buy_amount(df):
-    if "BuyNotSell" in df.index:
-        buy_sign = df["BuyNotSell"] * 2 - 1
-    else:
-        buy_sign = 1
-    amount = df["Amount"] if "Amount" in df.index else 0
-    buy_amount = buy_sign * amount
+    keys = df.index if isinstance(df, pd.Series) else df.columns
+    buy_sign = df["BuyNotSell"] * 2 - 1 if "BuyNotSell" in keys else 1
+    buy_amount = buy_sign * (df["Amount"] if "Amount" in keys else 0)
     return buy_amount
 
 
