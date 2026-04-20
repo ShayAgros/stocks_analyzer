@@ -2,11 +2,12 @@
 
 from PyQt5 import QtWidgets, QtGui, QtCore
 from PyQt5.QtCore import Qt, QSortFilterProxyModel
-from PyQt5.QtWidgets import (QApplication, QVBoxLayout, QHBoxLayout, QWidget, QCheckBox)
+from PyQt5.QtWidgets import (QApplication, QVBoxLayout, QHBoxLayout, QWidget, QCheckBox, QPushButton, QFileDialog)
 
 from gui.ticker_table import TickersTableView, TickersTableModel
 
 import pandas as pd
+import os
 import sys
 
 import stocks_analyzer
@@ -60,9 +61,11 @@ class tickers_gui(QWidget):
 
     def __init__(self, tickers_stats):
         super().__init__()
+        self.full_df = tickers_stats
+        self.tldr_df = self.full_df[stocks_analyzer.tldr_statistics]
         self.setWindowTitle("Stocks analyzer")
         self.setGeometry(50, 200, 1500, 1000)
-        self.place_tickers(tickers_stats)
+        self.place_tickers(self.tldr_df)
         self.show()
 
     def place_tickers(self, tickers_stats):
@@ -91,6 +94,11 @@ class tickers_gui(QWidget):
         check_layout.addWidget(self.healthy_cb)
         check_layout.addWidget(self.overvalued_cb)
         check_layout.addStretch()
+
+        self.export_btn = QPushButton("Export CSV")
+        self.export_btn.clicked.connect(self._export_csv)
+        check_layout.addWidget(self.export_btn)
+
         self.healthy_cb.stateChanged.connect(self._apply_filters)
         self.overvalued_cb.stateChanged.connect(self._apply_filters)
         vlayout.addLayout(check_layout)
@@ -118,6 +126,17 @@ class tickers_gui(QWidget):
         self.proxy_model.sort(self._sort_column, self._sort_order)
         self.tickers_table.horizontalHeader().setSortIndicatorShown(True)
 
+    def _export_csv(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export CSV", os.path.join(os.getcwd(), "statistics.csv"),
+            "CSV Files (*.csv)"
+        )
+        if not path:
+            return
+        base, ext = os.path.splitext(path)
+        self.full_df.to_csv(base + ext)
+        self.tldr_df.to_csv(base + "_tldr" + ext)
+
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape or e.text() == 'q':
             self.close()
@@ -130,7 +149,6 @@ if __name__ == '__main__':
     input_file = stocks_analyzer.select_stocks_file()
     tickers = stocks_analyzer.create_tickers_from_file(input_file)
     df = stocks_analyzer.ticker_list_to_df(tickers)
-    df = df[stocks_analyzer.tldr_statistics]
 
     window = tickers_gui(df)
     sys.exit(app.exec_())

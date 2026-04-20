@@ -6,10 +6,10 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSplitter
 from PyQt5.QtCore import Qt
 
-from ticker import Ticker, TickerGroup
+from ticker import Ticker, TickerGroup, market_data
 
 
 class Portfolio(TickerGroup):
@@ -23,23 +23,98 @@ class Portfolio(TickerGroup):
                          existing_tickers=existing_tickers, use_past_growth=use_past_growth)
         self.current_prices = self.get_stock_prices_now()
         self.quantities = np.array(quantities)
-        self.weights = self.quantities * np.array(self.current_prices)
-        self.weights = self.weights / np.sum(self.weights)
+        # Check if this is an actual portfolio with holdings
+        self.has_holdings = any(q > 0 for q in self.quantities)
+        
+        if self.has_holdings:
+            self.weights = self.quantities * np.array(self.current_prices)
+            self.weights = self.weights / np.sum(self.weights)
+        else:
+            # For portfolios without holdings, set equal weights for analysis purposes TODO: remove this?
+            self.weights = np.ones(len(quantities)) / len(quantities) if len(quantities) > 0 else np.array([])
+        
         self.weights_dict = dict(zip(zip(self.symbols, self.markets), self.weights))
         self.portfolio_annual_growth_forecast = np.nan
         self.portfolio_std = np.nan
+        # Set by calculate_correlation -> calculate_portfolio_beta TODO: better names
+        self.portfolio_monthly_returns = None
+        self.portfolio_betas = {}  # betas of tickers with regard to the avg portfolio
+        self.portfolio_beta = np.nan # beta of the avg portfolio with regard to the market
 
     def get_weight(self, symbol: str, market: str):
         return round((self.weights_dict[(symbol, market)] * 100), 2)
 
     def calculate_correlation(self):
         super().calculate_correlation()
-        self.portfolio_annual_growth_forecast = np.dot(self.weights, self.annual_growth_forecasts)
         valid_mask = np.array([f in self.valid_full_symbols for f in self.full_symbols])
         # 1st calculate the portfolio weights discarding all the non valid covariance tickers (Todo its dangerous to say its real)
         weights = self.weights[valid_mask]
         weights = weights / np.sum(weights)
+
+        forecasts = np.array(self.annual_growth_forecasts)[valid_mask]
+        self.portfolio_annual_growth_forecast = np.dot(weights, forecasts)
         self.portfolio_std = np.sqrt(weights.T @ self.cov @ weights)
+
+        # portfolio historic returns and per-ticker beta relative to portfolio
+        monthly = self.get_monthly_growths()[self.valid_full_symbols]
+        self.portfolio_monthly_returns = monthly @ weights
+        portfolio_var = self.portfolio_monthly_returns.var()
+        self.portfolio_betas = {}
+        for f in self.full_symbols:
+            if f not in self.valid_full_symbols:
+                self.portfolio_betas[f] = np.nan
+                continue
+            cov_with_portfolio = monthly[f].cov(self.portfolio_monthly_returns)
+            self.portfolio_betas[f] = cov_with_portfolio / portfolio_var if portfolio_var > 0 else np.nan
+
+        # Calculate weighted average beta for the portfolio relative to the market
+        self.calculate_portfolio_beta()
+
+    def calculate_portfolio_beta(self):
+        """Calculate the weighted average beta of the portfolio"""
+        total_beta = 0.0
+        total_weight = 0.0
+        
+        for full_symbol, weight in zip(self.full_symbols, self.weights):
+            beta = self.beta_dictionary.get(full_symbol, np.nan)
+            if not np.isnan(beta):
+                total_beta += weight * beta
+                total_weight += weight
+        
+        if total_weight > 0:
+            self.portfolio_beta = total_beta / total_weight
+        else:
+            self.portfolio_beta = np.nan
+
+    def get_betas_df(self):
+        """Return portfolio betas as a DataFrame indexed by symbol, including all stocks."""
+        full_to_sym = dict(zip(self.full_symbols, self.symbols))
+        
+        # Start with betas for stocks with valid covariance then add NaN to the rest
+        data = {full_to_sym.get(f, f): {"Portfolio Beta": b} for f, b in self.portfolio_betas.items()}
+        data.update({full_to_sym[f]: {"Portfolio Beta": np.nan} for f in self.full_symbols if full_to_sym[f] not in data})
+        df = pd.DataFrame.from_dict(data, orient="index")
+        return df
+    
+    def get_portfolio_table_df(self):
+        """Return a consolidated DataFrame with all portfolio data: weights (if has_holdings) and betas."""
+        data = {}
+        
+        for symbol, full_symbol, weight in zip(self.symbols, self.full_symbols, self.weights):
+            beta = self.portfolio_betas[full_symbol]
+            
+            if self.has_holdings:
+                # Show weights and betas
+                data[symbol] = {
+                    "Weight (%)": weight * 100,
+                    "Portfolio Beta": beta
+                }
+            else:
+                # Just list the symbol
+                data[symbol] = {}
+        
+        df = pd.DataFrame.from_dict(data, orient="index")
+        return df
 
     def plot_pie(self, ax=None):
         if not ax:
@@ -50,10 +125,21 @@ class Portfolio(TickerGroup):
         """PE = weighted_sum(price) / weighted_sum(eps), ROE = weighted_sum(eps) / weighted_sum(bv)"""
         total_price, total_eps, total_bv = 0.0, 0.0, 0.0
         for (sym, mkt), w in self.weights_dict.items():
-            t = self.tickers_dictionary[(sym, mkt)]
-            total_eps += w * t.statistics["eps"]
-            total_bv += w * t.statistics["book_value"]
-            total_price += w * t.statistics["price on update"]
+            if w == 0:
+                continue  # Skip tickers with zero weight
+            
+            t = self.tickers_dictionary.get((sym, mkt))
+            if not t:
+                continue  # Skip if not in dictionary (indices won't be here)
+            
+            try:
+                total_eps += w * t.statistics["eps"]
+                total_bv += w * t.statistics["book_value"]
+                total_price += w * t.statistics["price on update"]
+            except e:
+                print(f"Warning: Ticker {sym}:{mkt} missing required field")
+                raise e
+        
         pe = total_price / total_eps
         roe = (total_eps / total_bv * 100)
         return pe, roe
@@ -67,6 +153,7 @@ class Portfolio(TickerGroup):
 
         data = []
         for sym, mkt, w in zip(self.symbols, self.markets, self.weights):
+            if w == 0: continue
             t = self.tickers_dictionary.get((sym, mkt))
             sector = (t.statistics.get("sector") or "Unknown") if t else "Unknown"
             industry = (t.statistics.get("industry") or "Unknown") if t else "Unknown"
@@ -119,9 +206,12 @@ class Portfolio(TickerGroup):
             sec_industry_idx[sec] += 1
 
         ax_sectors.pie([s[1] for s in industry_slices],
-                       labels=[s[0] for s in industry_slices],
+                       labels=None,
                        radius=1.0, colors=mid_colors,
-                       wedgeprops=dict(width=0.4, edgecolor='w'), labeldistance=0.8)
+                       wedgeprops=dict(width=0.4, edgecolor='w'))
+        # Store industry names on wedges for hover tooltip
+        for wedge, (ind, _) in zip(ax_sectors.patches, industry_slices):
+            wedge.set_label(ind)
         ax_sectors.pie([s[1] for s in sector_slices],
                        labels=[s[0] for s in sector_slices],
                        radius=0.6, colors=[sec_color[s[0]] for s in sector_slices],
@@ -152,17 +242,20 @@ class Portfolio(TickerGroup):
 
     def plot_portfolio(self, ax=None):
         ax = self.plot_frontier(ax=ax)
-        ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast, 'ro')
+        # Plot portfolio point with actual std (axis labels will show normalized values)
+        print(f"[plot_portfolio] std={self.portfolio_std}, growth={self.portfolio_annual_growth_forecast}, beta={self.portfolio_beta}")
+        ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast, 'ro',
+               label=f'Portfolio ({self.portfolio_annual_growth_forecast*100:.1f}%)')
 
-    def to_df(self) -> pd.DataFrame:
-        tickers = []
-        for sym, mkt, full_sym in zip(self.symbols, self.markets, self.full_symbols):
-            if (sym, mkt) not in self.tickers_dictionary:
-                self.tickers_dictionary[(sym, mkt)] = Ticker.get_cache(
-                    sym, mkt, yf_ticker=self.yf_ticker.tickers[full_sym])
-            tickers.append(self.tickers_dictionary[(sym, mkt)])
-        d = {f"{t.symbol}:{t.market}": t.statistics.values() for t in tickers}
-        return pd.DataFrame.from_dict(d, orient='index', columns=tickers[0].statistics.keys())
+    def plot_portfolio_on_capm(self, ax):
+        """Plot the current portfolio point on the CAPM graph"""
+        if self.has_holdings:
+            print(f"[plot_portfolio_on_capm] beta={self.portfolio_beta}, growth={self.portfolio_annual_growth_forecast}")
+            if hasattr(self, 'portfolio_beta') and not np.isnan(self.portfolio_beta):
+                growth_pct = self.portfolio_annual_growth_forecast * 100
+                ax.plot(self.portfolio_beta, growth_pct, 'ro', markersize=12, 
+                       label='Portfolio', zorder=5)
+
 
 
 class HistoricPortfolio(Portfolio):
@@ -183,77 +276,195 @@ class PortfolioGui(QWidget):
         self._screener_window = None
 
         root = QHBoxLayout(self)
+        splitter = QSplitter(Qt.Horizontal)
+        root.addWidget(splitter)
 
         if show_frontier:
-            fig_frontier, ax = plt.subplots()
-            portfolio.plot_portfolio(ax=ax)
+            fig_frontier, (ax_ef, ax_capm) = plt.subplots(2, 1, figsize=(8, 10))
+            portfolio.plot_portfolio(ax=ax_ef)
             growth_mode = "Past Growth" if portfolio.use_past_growth else "DCF Forecast"
-            ax.set_ylabel("Expected Return (%s)" % growth_mode)
-            ax.grid(True)
+            ax_ef.set_ylabel("Expected Return (%s)" % growth_mode)
+            ax_ef.grid(True)
+            
+            # Add CAPM graph below
+            portfolio.plot_capm(ax=ax_capm)
+            # Add portfolio point to CAPM graph
+            portfolio.plot_portfolio_on_capm(ax=ax_capm)
+            # Add legend after all elements are plotted
+            ax_capm.legend(fontsize=8, markerscale=0.6)
+            
+            fig_frontier.tight_layout()
             canvas = FigureCanvas(fig_frontier)
-            frontier_layout = QVBoxLayout()
+            frontier_widget = QWidget()
+            frontier_layout = QVBoxLayout(frontier_widget)
             frontier_layout.addWidget(canvas)
             frontier_layout.addWidget(NavigationToolbar(canvas, self))
-            root.addLayout(frontier_layout, stretch=3)
+            splitter.addWidget(frontier_widget)
 
-        self._stats_layout = QVBoxLayout()
+        stats_widget = QWidget()
+        self._stats_layout = QVBoxLayout(stats_widget)
         self._stats_layout.setAlignment(Qt.AlignTop)
-        root.addLayout(self._stats_layout, stretch=1)
+        splitter.addWidget(stats_widget)
+
+        if show_frontier:
+            splitter.setStretchFactor(0, 3)
+            splitter.setStretchFactor(1, 1 if portfolio.has_holdings else 0)
 
         self._summary_lbl = QLabel("")
         self._summary_lbl.setStyleSheet("font-size: 14px; padding: 8px;")
         self._stats_layout.addWidget(self._summary_lbl)
+        if not portfolio.has_holdings:
+            self._summary_lbl.hide()
 
-        # portfolio stats
-        try:
-            pe, roe = portfolio.get_weighted_stats()
-            stats_text = "PE: {:.1f}  |  ROE: {:.1f}%".format(pe, roe)
-        except Exception as e:
-            stats_text = "PE/ROE: unavailable ({})".format(e)
-        self._stats_lbl = QLabel(stats_text)
-        self._stats_lbl.setStyleSheet("font-size: 12px; padding: 4px; color: gray;")
-        self._stats_layout.addWidget(self._stats_lbl)
+        # Consolidated table showing weights (if has_holdings) and betas
+        self._table_lbl = QLabel("")
+        self._table_lbl.setStyleSheet("font-family: monospace; font-size: 12px; padding: 8px;")
+        self._table_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        table_df = portfolio.get_portfolio_table_df()
+        if table_df.empty or table_df.columns.empty:
+            self._table_lbl.setText("\n".join(portfolio.symbols))
+        else:
+            self._table_lbl.setText(table_df.to_string(float_format=lambda x: "%.2f" % x))
+        self._stats_layout.addWidget(self._table_lbl)
+
+        # portfolio stats (only show if has holdings)
+        if portfolio.has_holdings:
+            try:
+                pe, roe = portfolio.get_weighted_stats()
+                stats_text = "PE: {:.1f}  |  ROE: {:.1f}%".format(pe, roe)
+            except Exception as e:
+                stats_text = "PE/ROE: unavailable ({})".format(e)
+            self._stats_lbl = QLabel(stats_text)
+            self._stats_lbl.setStyleSheet("font-size: 12px; padding: 4px; color: gray;")
+            self._stats_layout.addWidget(self._stats_lbl)
 
         btn = QPushButton("Open Screener")
         btn.clicked.connect(self._open_screener)
         self._stats_layout.addWidget(btn)
+        
+        # Add "Open Optimal" button if we have tangency portfolio
+        if hasattr(portfolio, 'tangency_portfolio') and portfolio.tangency_portfolio:
+            btn_optimal = QPushButton("Open Optimal")
+            btn_optimal.clicked.connect(self._open_optimal)
+            self._stats_layout.addWidget(btn_optimal)
 
-        fig_pie, (ax_t, ax_s) = plt.subplots(1, 2)
-        try:
-            portfolio.plot_concentric_pie(ax=(ax_t, ax_s))
-        except Exception as e:
-            ax_t.text(0.5, 0.5, f"Pie unavailable:\n{e}", ha='center', va='center', transform=ax_t.transAxes)
-        self._stats_layout.addWidget(FigureCanvas(fig_pie))
+        # Add "Open Min Variance" button if we have min variance portfolio
+        if hasattr(portfolio, 'min_var_portfolio') and portfolio.min_var_portfolio:
+            btn_min_var = QPushButton("Open Min Variance")
+            btn_min_var.clicked.connect(self._open_min_variance)
+            self._stats_layout.addWidget(btn_min_var)
 
-        def on_pie_dblclick(event):
-            if event.dblclick and event.inaxes is ax_t:
-                for wedge, symbol in portfolio._ticker_wedges:
-                    if wedge.contains(event)[0]:
-                        market = dict(zip(portfolio.symbols, portfolio.markets)).get(symbol)
-                        if market:
-                            from npv_calculator import GrowthApp
-                            ticker = portfolio.tickers_dictionary.get((symbol, market)) or \
-                                     Ticker.get_cache(symbol, market)
-                            win = GrowthApp(ticker=ticker)
-                            self._growth_windows.append(win)
-                            win.show()
-                        break
-        fig_pie.canvas.mpl_connect('button_press_event', on_pie_dblclick)
+        # Only show pie chart if portfolio has holdings
+        if portfolio.has_holdings:
+            fig_pie, (ax_t, ax_s) = plt.subplots(1, 2)
+            try:
+                portfolio.plot_concentric_pie(ax=(ax_t, ax_s))
+            except Exception as e:
+                ax_t.text(0.5, 0.5, f"Pie unavailable:\n{e}", ha='center', va='center', transform=ax_t.transAxes)
+            self._stats_layout.addWidget(FigureCanvas(fig_pie))
+
+            def on_pie_dblclick(event):
+                if event.dblclick and event.inaxes is ax_t:
+                    for wedge, symbol in portfolio._ticker_wedges:
+                        if wedge.contains(event)[0]:
+                            market = dict(zip(portfolio.symbols, portfolio.markets)).get(symbol)
+                            if market:
+                                from npv_calculator import GrowthApp
+                                ticker = portfolio.tickers_dictionary.get((symbol, market)) or \
+                                         Ticker.get_cache(symbol, market)
+                                win = GrowthApp(ticker=ticker)
+                                self._growth_windows.append(win)
+                                win.show()
+                            break
+            fig_pie.canvas.mpl_connect('button_press_event', on_pie_dblclick)
 
     def set_summary(self, summary_text, perf_df):
         self._summary_lbl.setText(summary_text)
-        tbl = QLabel(perf_df.to_string(float_format=lambda x: "%.1f" % x))
-        tbl.setStyleSheet("font-family: monospace; font-size: 12px; padding: 8px;")
-        tbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self._stats_layout.insertWidget(1, tbl)
+        self._table_lbl.setText(perf_df.to_string(float_format=lambda x: "%.1f" % x))
 
     def _open_screener(self):
-        from stocks_analyzer import tldr_statistics
         from ticker_gui import tickers_gui
         df = self._portfolio.to_df()
-        df = df[[c for c in tldr_statistics if c in df.columns]]
         self._screener_window = tickers_gui(df)
         self._screener_window.show()
+    
+    def _open_optimal(self):
+        self._open_portfolio_from_weights(self._portfolio.tangency_portfolio, "Optimal Portfolio (Tangency)")
+
+    def _open_min_variance(self):
+        self._open_portfolio_from_weights(self._portfolio.min_var_portfolio, "Min Variance Portfolio")
+
+    def _open_portfolio_from_weights(self, target_weights, title):
+        """Create and open a new portfolio from a dict of {full_symbol: weight}."""
+        try:
+            from pypfopt.discrete_allocation import DiscreteAllocation
+            from ticker import yahoo_symbol_is_index
+
+            p = self._portfolio
+            # Build full_symbol -> (symbol, market, price) mapping from the existing parallel lists
+            full_to_info = {}
+            for sym, mkt, fsym, price in zip(p.symbols, p.markets, p.full_symbols, p.current_prices):
+                if not yahoo_symbol_is_index(sym) and price and price > 0:
+                    full_to_info[fsym] = (sym, mkt, price)
+
+            print(f"\n{title} Weights (before filtering):")
+            for fsym, weight in target_weights.items():
+                if weight > 0.001:
+                    print(f"  {fsym}: {weight*100:.2f}%")
+
+            # Filter to symbols we have prices for
+            filtered_weights = {k: v for k, v in target_weights.items() if k in full_to_info}
+            if not filtered_weights:
+                print("Error: No valid investable assets found")
+                return
+
+            # Renormalize weights
+            total_weight = sum(filtered_weights.values())
+            if total_weight > 0:
+                filtered_weights = {k: v / total_weight for k, v in filtered_weights.items()}
+
+            latest_prices = pd.Series({k: full_to_info[k][2] for k in filtered_weights})
+
+            # Use total portfolio value if we have holdings, otherwise a default
+            total_value = sum(q * pr for q, pr in zip(p.quantities, p.current_prices))
+            if total_value <= 0:
+                total_value = 100_000  # default notional value for portfolios without holdings
+
+            da = DiscreteAllocation(filtered_weights, latest_prices, total_portfolio_value=total_value)
+            allocation, leftover = da.greedy_portfolio()
+
+            print(f"\n{title} Allocation (Total: ${total_value:.2f}, Leftover: ${leftover:.2f}):")
+            optimal_symbols, optimal_markets, optimal_quantities = [], [], []
+            for fsym, quantity in allocation.items():
+                sym, mkt, price = full_to_info[fsym]
+                optimal_symbols.append(sym)
+                optimal_markets.append(mkt)
+                optimal_quantities.append(quantity)
+                print(f"  {sym}: {quantity} shares @ ${price:.2f} = ${quantity * price:.2f}")
+
+            if not optimal_symbols:
+                print("Error: No shares allocated")
+                return
+
+            optimal_portfolio = Portfolio(
+                optimal_symbols, optimal_markets, optimal_quantities,
+                risk_free_rate=p.risk_free_rate,
+                existing_tickers=p.tickers_dictionary,
+                use_past_growth=p.use_past_growth
+            )
+            optimal_portfolio.calculate_correlation()
+
+            optimal_gui = PortfolioGui(optimal_portfolio, show_frontier=True)
+            optimal_gui.setWindowTitle(title)
+            if not hasattr(self, '_portfolio_windows'):
+                self._portfolio_windows = []
+            self._portfolio_windows.append(optimal_gui)
+            optimal_gui.show()
+
+        except Exception as e:
+            print(f"Error creating portfolio: {e}")
+            import traceback
+            traceback.print_exc()
 
 class HistoricPortfolio(Portfolio):
     """

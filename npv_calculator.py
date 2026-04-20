@@ -8,7 +8,12 @@ from PyQt5.QtWidgets import (
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from ticker import Ticker
+import json, os
 import numpy as np
+
+_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "npv_config.json")
+with open(_config_path, "r") as _f:
+    NPV_CALCULATOR_CONFIG = json.load(_f)["npv_calculator"]
 
 from PyQt5 import QtWidgets, QtCore
 from qt_material import apply_stylesheet  # import after the appropriate qtwidgets
@@ -72,7 +77,7 @@ class GrowthApp(QWidget):
         # Growth Time Section
         growth_time_layout = QHBoxLayout()
         growth_time_label = QLabel("Growth Time:")
-        self.growth_time_input = QLineEdit("5")
+        self.growth_time_input = QLineEdit(str(NPV_CALCULATOR_CONFIG["default_growth_time"]))
         growth_time_layout.addWidget(growth_time_label)
         growth_time_layout.addWidget(self.growth_time_input)
         self.controls_layout.addLayout(growth_time_layout)
@@ -84,7 +89,7 @@ class GrowthApp(QWidget):
         self.growth_benchmark_group.buttons()[0].setChecked(True)
 
         # Perpetuity Growth Section
-        self.perpetuity_growth_input = QLineEdit("2")
+        self.perpetuity_growth_input = QLineEdit(str(NPV_CALCULATOR_CONFIG["default_perpetuity_growth_percent"]))
         self.perpetuity_group = self._init_radio(prefix="Perpetuity Growth:", text_box=self.perpetuity_growth_input,
                                                  names=["Nothing", "Constant", "Slow Exponent"])
         self.perpetuity_group.buttons()[2].setChecked(True)  # Slow Exponent default
@@ -92,7 +97,7 @@ class GrowthApp(QWidget):
         # Discount Rate Section
         discount_layout = QHBoxLayout()
         discount_layout.addWidget(QLabel("Discount Rate (%):"))
-        self.discount_rate_input = QLineEdit("10")
+        self.discount_rate_input = QLineEdit(str(NPV_CALCULATOR_CONFIG["default_discount_rate_percent"]))
         discount_layout.addWidget(self.discount_rate_input)
         self.controls_layout.addLayout(discount_layout)
 
@@ -101,9 +106,11 @@ class GrowthApp(QWidget):
             from ticker import market_data
             rfr = market_data.get_risk_free_rate() * 100
             mkt = market_data.get_market_return() * 100
+            beta = self.ticker.statistics.get("beta")
+            beta_str = f"{beta:.2f}" if beta and not np.isnan(beta) else "N/A"
             capm = self.ticker.statistics.get("capm_interest")
             capm_str = f"{capm:.1f}%" if capm and not np.isnan(capm) else "N/A"
-            capm_lbl = QLabel(f"CAPM: {capm_str}  |  RFR: {rfr:.1f}%  |  Mkt: {mkt:.1f}%")
+            capm_lbl = QLabel(f"CAPM: {capm_str}  |  β: {beta_str}  |  RFR: {rfr:.1f}%  |  Mkt: {mkt:.1f}%")
         except Exception as e:
             capm_lbl = QLabel(f"CAPM: unavailable ({e})")
         capm_lbl.setStyleSheet("font-size: 11px; color: gray;")
@@ -149,8 +156,8 @@ class GrowthApp(QWidget):
             "growth_rate": growth_rate,
             "add_bv": self.add_bv_checkbox.isChecked(),
             "short_term_is_linear": is_linear,
-            "long_growth_duration": 0 if self.perpetuity_group.checkedButton().text() == "Nothing" else -1,
-            "forecasted_number_years_of_growth": int(self.growth_time_input.text()),
+            "long_term_growth_duration": 0 if self.perpetuity_group.checkedButton().text() == "Nothing" else -1,
+            "short_term_growth_duration": int(self.growth_time_input.text()),
             "maximal_long_term_growth_rate": float(self.perpetuity_growth_input.text()) / 100 if self.perpetuity_group.checkedButton().text() == "Slow Exponent" else 0,
         }
         print(args_iir)
@@ -168,7 +175,7 @@ class GrowthApp(QWidget):
             "Growth: {}\nPrice Target: {:.2f}\nIRR: {:.2f}%".format(growth_str, price_target, iir))
 
 
-if __name__ == '__main__':
+def main():
     app = QApplication(sys.argv)
 
     # setup stylesheet
@@ -177,3 +184,7 @@ if __name__ == '__main__':
     ex = GrowthApp()
     ex.show()
     sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portfolio-analyzer"
+version = "0.1.0"
+description = "Stock portfolio analyzer with optimization and GUI visualization"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Yoav Dim"},
+    {name = "Shay Agroskin"},
+]
+requires-python = ">=3.8"
+dependencies = [
+    "yfinance",
+    "pandas",
+    "requests",
+    "numpy",
+    "htmldom",
+    "matplotlib",
+    "pyqt5",
+    "qt-material==2.14",
+    "PyPortfolioOpt",
+    "ecos",
+    "colorama",
+]
+
+[project.gui-scripts]
+portfolio-analyzer = "portfolio_analyzer:main"
+npv-calculator = "npv_calculator:main"
+
+[project.scripts]
+stocks-analyzer = "stocks_analyzer:main"
+
+[tool.setuptools]
+py-modules = [
+    "portfolio_analyzer",
+    "portfolio",
+    "ticker",
+    "stocks_analyzer",
+    "npv_calculator",
+    "ticker_gui",
+    "bonds",
+    "reports",
+    "yahoo_reports",
+    "yfinance_info",
+]
+packages = ["gui"]

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import warnings
+import json
 from copy import deepcopy
 
 from pypfopt import EfficientFrontier, plotting
@@ -20,11 +21,21 @@ import matplotlib.dates as mdates
 import matplotlib.widgets
 import sys
 
+# Load NPV assumptions from config
+_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "npv_config.json")
+with open(_config_path, "r") as _f:
+    _config = json.load(_f)
+    NPV_COMMON = _config["npv_common"]
+    NPV_ASSUMPTIONS = _config["npv_assumptions"]
+    LINEAR_IRR_CONFIG = _config["linear_irr"]
+    PORTFOLIO_CONFIG = _config["portfolio"]
+    TLDR_FIELDS = _config.get("tldr_fields", [])
+
 # Define:
 tickers_dir = "./tickers_cache"
 cache_file_name = "{symbol}-{market}.pkl"
 
-forcast_growth_field = "irr[%]"  # todo, make it dynamic
+forcast_growth_field = PORTFOLIO_CONFIG["forecast_growth_field"]
 
 
 class MarketDataCache:
@@ -32,7 +43,7 @@ class MarketDataCache:
     _TTL = 3600
 
     def __init__(self):
-        self._cache = {"rfr": (None, 0), "mkt": (None, 0)}
+        self._cache = {"rfr": (None, 0), "mkt": (None, 0), "mkt_std": (None, 0), "mkt_monthly": (None, 0)}
 
     def _get(self, key, fetch_fn):
         import time
@@ -54,6 +65,31 @@ class MarketDataCache:
             return (spx.get_stock_price_now() - old) / old
         return self._get("mkt", fetch)
 
+    def get_market_monthly_returns(self) -> pd.Series:
+        def fetch():
+            import yfinance as yf
+            market_hist = yf.Ticker("^GSPC").history(period="10y")["Close"].iloc[::30]
+            market_hist.index = market_hist.index.tz_localize(None)
+            return market_hist.pct_change().dropna()
+        return self._get("mkt_monthly", fetch)
+
+    def get_market_std(self) -> float:
+        def fetch():
+            market_returns = self.get_market_monthly_returns()
+            return np.sqrt(market_returns.var() * 12)
+        return self._get("mkt_std", fetch)
+
+
+def calculate_beta(asset_returns: pd.Series, market_returns: pd.Series) -> float:
+    """Calculate beta as Cov(R_asset, R_market) / Var(R_market)."""
+    common = asset_returns.dropna().index.intersection(market_returns.index)
+    if len(common) < 3:
+        return np.nan
+    market_var = market_returns.loc[common].var()
+    if market_var == 0:
+        return np.nan
+    return asset_returns.loc[common].cov(market_returns.loc[common]) / market_var
+
 
 market_data = MarketDataCache()
 
@@ -72,7 +108,9 @@ def get_exception_line():
     return frame.tb_lineno
 
 
-def search_growth(npv_function, price, min_growth, max_growth=1, delta_growth=0.1/100):
+def search_growth(npv_function, price, min_growth,
+                  max_growth=NPV_ASSUMPTIONS["irr_search_max"],
+                  delta_growth=NPV_ASSUMPTIONS["irr_search_step_percent"]/100):
     """
     find the iir/growth from the discounted value
     :param npv_function: function which receive the guessed growth and return  the npv (assume monothonic one)
@@ -381,8 +419,8 @@ class Ticker:
             growth_rate=self.statistics["growth_rate"],
             forward_to_present=True,
             short_term_is_linear=True,
-            long_growth_duration=0,
-            forecasted_number_years_of_growth=10
+            long_term_growth_duration=LINEAR_IRR_CONFIG["long_term_growth_duration"],
+            short_term_growth_duration=LINEAR_IRR_CONFIG["short_term_growth_duration"]
         )
         return irr, linear_irr
 
@@ -392,7 +430,7 @@ class Ticker:
         # for reference:
         # approximate_bond_10 = 0.95 * 0.01  # updated @ 19.12.2020
         # approximate_bond_30 = 1.7 * 0.01  # updated @ 19.12.2020
-        discount_rate = 10 * 0.01  # the wished return rate of an investment (used only for the basic calculations)
+        discount_rate = NPV_COMMON["discount_rate_percent"] / 100  # the wished return rate of an investment (used only for the basic calculations)
 
         # --- basic_discount_value - todo: check my formula
         #
@@ -422,12 +460,12 @@ class Ticker:
 
     def _get_calc_npv(self,
                    growth_rate=None,
-                   add_bv=True,
-                   forward_to_present=False,
-                   short_term_is_linear=False,
-                   long_growth_duration=-1,
-                   forecasted_number_years_of_growth=8,
-                   maximal_long_term_growth_rate=3/100,
+                   add_bv=NPV_ASSUMPTIONS["add_book_value"],
+                   forward_to_present=NPV_ASSUMPTIONS["forward_to_present"],
+                   short_term_is_linear=NPV_ASSUMPTIONS["short_term_is_linear"],
+                   long_term_growth_duration=NPV_ASSUMPTIONS["long_term_growth_duration"],
+                   short_term_growth_duration=NPV_ASSUMPTIONS["short_term_growth_duration"],
+                   maximal_long_term_growth_rate=NPV_ASSUMPTIONS["maximal_long_term_growth_rate_percent"]/100,
                    ):
         #
         # --- The Discounted Free Cash Flow Model (according to the youtube course): ---
@@ -465,14 +503,14 @@ class Ticker:
             # sum over the short term
             if not short_term_is_linear:
                 first_short_term = average_annual_free_cash_flow * short_term_q
-                last_short_term = average_annual_free_cash_flow * (short_term_q ** forecasted_number_years_of_growth)
+                last_short_term = average_annual_free_cash_flow * (short_term_q ** short_term_growth_duration)
                 if short_term_q == 1:  # discontinuity point
-                    sum_discounted_fcf_short_term = first_short_term * forecasted_number_years_of_growth
+                    sum_discounted_fcf_short_term = first_short_term * short_term_growth_duration
                 else:
                     sum_discounted_fcf_short_term = (first_short_term - last_short_term * short_term_q) / (1 - short_term_q)
             else:
                 # there is no easy formula for *discounted* constant addition, we will calculate explicitly
-                terms = np.arange(1, forecasted_number_years_of_growth + 1)
+                terms = np.arange(1, short_term_growth_duration + 1)
                 fcf = average_annual_free_cash_flow + linear_growth * terms
                 dfcf = fcf / (1 + discount_rate) ** terms
                 sum_discounted_fcf_short_term = np.sum(dfcf)
@@ -480,7 +518,7 @@ class Ticker:
 
             # and from its ending to eternity
             first_long_term = last_short_term * long_term_q
-            if long_growth_duration < 0:
+            if long_term_growth_duration < 0:
                 if long_term_q >= 1:  # edge cases
                     sum_discounted_fcf_long_term = np.sign(first_long_term)*np.inf
                 elif long_term_q <= -1:
@@ -488,9 +526,9 @@ class Ticker:
                 else:
                     sum_discounted_fcf_long_term = first_long_term / (discount_rate - forcasted_long_term_growth_rate)
             else:  # (a1-an*q)/(1-q)
-                last_long_term_times_q = last_short_term * long_term_q ** (long_growth_duration + 1)
+                last_long_term_times_q = last_short_term * long_term_q ** (long_term_growth_duration + 1)
                 if long_term_q == 1:  # discontinuity point
-                    sum_discounted_fcf_long_term = first_long_term * long_growth_duration
+                    sum_discounted_fcf_long_term = first_long_term * long_term_growth_duration
                 else:
                     sum_discounted_fcf_long_term = (first_long_term - last_long_term_times_q) / (1 - long_term_q)
 
@@ -505,7 +543,7 @@ class Ticker:
         return calc_npv
 
     def _calc_dcf_intrinsic_values(self,
-                                   discount_rate=10/100,
+                                   discount_rate=NPV_COMMON["discount_rate_percent"]/100,
                                    forward_to_present=False,
                                    **kwargs
                                    ):
@@ -520,8 +558,8 @@ class Ticker:
         # calculate the intrinsic rate of return (by dcf model):
         if intrinsic_value > 0 and self.statistics["eps"] > 0:   # negative values will prefer high discount (unintuitivly)
             delta = 0.1/100
-            #start_at = max(forcasted_long_term_growth_rate + delta, 0) if long_growth_duration < 0 else 0  # todo: add negative if not infinite
-            start_at = -0.9
+            #start_at = max(forcasted_long_term_growth_rate + delta, 0) if long_term_growth_duration < 0 else 0  # todo: add negative if not infinite
+            start_at = NPV_ASSUMPTIONS["irr_search_min"]
             if np.isnan(start_at):
                 start_at=0
             irr = search_growth(calc_npv, stock_price, start_at, 1, delta)
@@ -561,7 +599,8 @@ class Ticker:
         self.statistics["overvalued"] = (self.statistics["pe*bv"] >= 100 or
                                          self.statistics["naive_time_to_profit"] >= 20 or
                                          self.statistics["irr[%]"] < 10 or
-                                         self.statistics["basic_discount_ratio"] < -1
+                                         self.statistics["basic_discount_ratio"] < -10 or
+                                         self.statistics["capm_discount_ratio"]  < -10
                                          )
         # TODO: add a current ratio metric for credit obligations?
 
@@ -774,8 +813,8 @@ class Ticker:
         format_axis(ax)
         label = "PE"
         pe_ratios = prices / eps 
-        ax.plot(times, pe_ratios, '-', label=label)
-        ax.legend(framealpha=0.4)
+        line1 = ax.plot(times, pe_ratios, '-', label=label)
+        ax.set_ylabel("PE")
 
         ax2 = ax.twinx()
         label = "EPS Growth"
@@ -786,8 +825,13 @@ class Ticker:
         de = eps[1:] / eps[:-1]
         growths = de ** (1 / dt)
         growths = (growths - 1) * 100
-        ax2.plot(time_for_deltas, growths, label=label, color="C1")
-        ax2.legend(framealpha=0.4)
+        line2 = ax2.plot(time_for_deltas, growths, label=label, color="C1")
+        ax2.set_ylabel("Growth")
+        
+        # Combine legends from both axes
+        lines = line1 + line2
+        labels = [l.get_label() for l in lines]
+        ax.legend(lines, labels, framealpha=0.4)
 
         # wide price graph
         ax = fig.add_subplot(gs[-1, :])
@@ -939,40 +983,99 @@ class TickerGroup(YahooGroup):
         symbols = [s.upper() for s in symbols]
         markets = [m.upper() for m in markets]
         super().__init__(symbols, markets)
-        self.risk_free_rate = risk_free_rate
+        self.risk_free_rate = risk_free_rate if risk_free_rate else market_data.get_risk_free_rate()
+        self.market_std = market_data.get_market_std()
         self.portfolio_std = np.nan
         self.tickers_dictionary = existing_tickers  # dict[(symbol,market)] will hold the ticker, will be used for get_forcasted_monthly_growth(), otherwise use past growth
         self.use_past_growth = use_past_growth
         self.annual_growth_forecasts = list()
+        self.beta_dictionary = {}
+        self.efficient_frontier = None
+
+        # set in find_tangency_portfolio:  TODO: group together and remove duplication with min var
+        self.tangency_portfolio = None
+        self.return_tangent = np.nan
+        self.std_tangent = np.nan
+        self.beta_tangent = np.nan
+
+        # set in find_min_variance_portfolio:
+        self.min_var_portfolio = None
+        self.return_min_var = np.nan
+        self.std_min_var = np.nan
+        self.beta_min_var = np.nan
+
+    def to_df(self) -> pd.DataFrame:
+        tickers = list(self.tickers_dictionary.values())
+        if not tickers:
+            return pd.DataFrame()
+        columns = list(tickers[0].statistics.keys())
+        d = {f"{t.symbol}:{t.market}": [t.statistics.get(k) for k in columns] for t in tickers}
+        return pd.DataFrame.from_dict(d, orient='index', columns=columns)
 
     def calculate_correlation(self):
         super().calculate_correlation()
         self.calculate_growth_forecast()
+        self.build_beta_dictionary()
         self.create_frontier()
+        self.find_tangency_portfolio()
+        self.find_min_variance_portfolio()
 
     def calculate_growth_forecast(self):
         print("recreating tickers and calculating growth")  # todo optimize runtime
         for symbol, market, full_symbol in zip(self.symbols, self.markets, self.full_symbols):
-            if not self.use_past_growth or not yahoo_symbol_is_index(symbol):
-                if (symbol,market) not in self.tickers_dictionary:
-                    try:
-                        self.tickers_dictionary[(symbol,market)] = Ticker.get_cache(symbol, market, yf_ticker=self.yf_ticker.tickers[full_symbol])
-                    except Exception as e:
-                        print(f"Warning: skipping {symbol}:{market} in growth forecast: {e}")
+            # For indices, use past growth and skip ticker creation
+            if yahoo_symbol_is_index(symbol):
+                self.annual_growth_forecasts.append(self.get_past_annual_performance(symbol, market))
+                continue
+            
+            # Create ticker if not already in dictionary
+            if (symbol, market) not in self.tickers_dictionary:
+                try:
+                    self.tickers_dictionary[(symbol, market)] = Ticker.get_cache(symbol, market, yf_ticker=self.yf_ticker.tickers[full_symbol])
+                except Exception as e:
+                    print(f"Warning: failed to create ticker for {symbol}:{market}: {e}")
+                    if not self.use_past_growth:
                         self.annual_growth_forecasts.append(float('nan'))
                         continue
-                self.annual_growth_forecasts.append(self.tickers_dictionary[(symbol,market)].get_forecasted_annual_growth())
+            
+            # Calculate growth: forecasted or past
+            if self.use_past_growth:
+                growth = self.get_past_annual_performance(symbol, market)
             else:
-                self.annual_growth_forecasts.append(self.get_past_annual_performance(symbol,market))
+                growth = self.tickers_dictionary[(symbol, market)].get_forecasted_annual_growth()
+            
+            self.annual_growth_forecasts.append(growth)
 
-#    def calculate_tickers(self):
-#        """fetch in parrallel"""
-#        uncached_tickers = [item for item in zip(self.symbols, self.markets) if (item not in self.tickers_dictionary) and not yahoo_symbol_is_index(item[0]) ] 
-#        tickers_list = create_tickers_from_symbol_names(uncached_tickers)
-#        for ticker in tickers_list:
-#            self.tickers_dictionary[(ticker.symbol, ticker.market)] = ticker
+        # Remove symbols with NaN forecasts from valid set
+        self.valid_full_symbols = [f for f, g in zip(self.full_symbols, self.annual_growth_forecasts)
+                                   if f in self.valid_full_symbols and not np.isnan(g)]
 
-
+    def build_beta_dictionary(self):
+        """Build a dictionary mapping full_symbol to beta value for all symbols."""
+        self.beta_dictionary = {}
+        monthly = self.get_monthly_growths()
+        market_returns = market_data.get_market_monthly_returns()
+        
+        for symbol, market, full_symbol in zip(self.symbols, self.markets, self.full_symbols):
+            beta = np.nan
+            if (symbol, market) in self.tickers_dictionary:
+                beta = self.tickers_dictionary[(symbol, market)].statistics.get("beta")
+            else:
+                try:
+                    beta = self.yf_ticker.tickers[full_symbol].info.get("beta")
+                except Exception as e:
+                    print(f"{full_symbol}: error getting beta ({e})")
+            
+            # Fallback: calculate from returns when Yahoo doesn't provide beta
+            if beta is None or (isinstance(beta, float) and np.isnan(beta)):
+                if full_symbol in monthly.columns:
+                    beta = calculate_beta(monthly[full_symbol], market_returns)
+                    if np.isnan(beta):
+                        print(f"{full_symbol}: calculate_beta returned NaN (common dates < 3?)")
+                else:
+                    print(f"{full_symbol}: not in monthly.columns, cannot calculate beta")
+            
+            self.beta_dictionary[full_symbol] = beta if beta is not None else np.nan
 
     def create_frontier(self):
         print("EF")
@@ -980,41 +1083,136 @@ class TickerGroup(YahooGroup):
         named_growth = named_growth[self.valid_full_symbols].fillna(0)
         self.efficient_frontier = EfficientFrontier(named_growth, self.cov, verbose=False, solver="ECOS")  # todo: understand why this solver works when the default failed
 
-    def optimize(self, ax1=None, ax2=None):
-        print("risk_free_rate: %s" % self.risk_free_rate)
-        ax1 = self.plot_frontier(ax=ax1)
-        self.find_tangency_portfolio()
-        ax2 = self.plot_tangency(ax1, ax2)
-        plt.show()
-
-
+    def _solve_portfolio(self, ef_method, **kwargs):
+        """Solve an efficient frontier optimization and return (weights, return, std, beta)."""
+        ef_copy = self.efficient_frontier.deepcopy()
+        weights = ef_method(ef_copy, **kwargs)
+        ret, std, _ = ef_copy.portfolio_performance(risk_free_rate=self.risk_free_rate)
+        w_arr = np.array([weights.get(f, 0) for f in self.full_symbols])
+        b_arr = np.array([self.beta_dictionary.get(f, np.nan) for f in self.full_symbols])
+        valid = ~np.isnan(b_arr) & (w_arr > 0)
+        beta = w_arr[valid] @ b_arr[valid] / w_arr[valid].sum() if valid.any() else np.nan
+        return weights, ret, std, beta
 
     def find_tangency_portfolio(self):
-        self.tangency_portfolio = self.efficient_frontier.max_sharpe(risk_free_rate=self.risk_free_rate)
+        """Calculate the optimal (tangency) portfolio using max Sharpe ratio"""
+        try:
+            self.tangency_portfolio, self.return_tangent, self.std_tangent, self.beta_tangent = \
+                self._solve_portfolio(lambda ef: ef.max_sharpe(risk_free_rate=self.risk_free_rate))
+        except Exception as e:
+            print(f"Warning: Could not calculate optimal portfolio: {e}")
 
-        self.return_tangent, self.std_tangent, self.sharpe_tangent = self.efficient_frontier.portfolio_performance(risk_free_rate=self.risk_free_rate)
-        #ax.scatter(std_tangent, ret_tangent, marker="*", s=100, c="r", label="Max Sharpe")
-
-
+    def find_min_variance_portfolio(self):
+        """Calculate the minimum variance portfolio"""
+        try:
+            self.min_var_portfolio, self.return_min_var, self.std_min_var, self.beta_min_var = \
+                self._solve_portfolio(lambda ef: ef.min_volatility())
+        except Exception as e:
+            print(f"Warning: Could not calculate min variance portfolio: {e}")
 
     def plot_frontier(self, ax=None):
         if not ax:
             _, ax = plt.subplots()
         plotting.plot_efficient_frontier(self.efficient_frontier.deepcopy(), ax=ax, ef_param="return", show_assets=True, show_tickers=True)
+        
+        # Normalize X axis by market std
+        # Use FuncFormatter to relabel the x-axis ticks
+        from matplotlib.ticker import FuncFormatter
+        
+        def format_func(value, tick_number):
+            return f'{value / self.market_std:.2f}'
+        
+        ax.xaxis.set_major_formatter(FuncFormatter(format_func))
+        ax.set_xlabel("Volatility (std)")
+        
+        # Add risk-free rate reference point
+        rfr = self.risk_free_rate
+        # Plot at x=0 (zero volatility) with normalized x-axis if applicable
+        ax.plot(0, rfr, 'go', markersize=10, label=f'Risk-Free Rate ({rfr*100:.1f}%)', zorder=5)
+
+        # Add market index reference point
+        mkt_return = market_data.get_market_return()
+        # Plot at market std (x=market_std, y=market_return)
+        if hasattr(self, 'market_std') and self.market_std > 0:
+            ax.plot(self.market_std, mkt_return, 'go', markersize=10, label=f'Market (S&P 500: {mkt_return*100:.1f}%)', zorder=5)
+
+        # Add optimal portfolio and CAL
+        self.plot_optimal_and_cal(ax, rfr)
+    
         ax.set_title("Efficient Frontier")
-        ax.legend()
+        ax.legend(fontsize=8, markerscale=0.6)
         ax.get_figure().set_layout_engine('tight')
         return ax
 
-    def plot_tangency(self, ax1, ax2=None):
-        if not ax2:
-            _, ax2 = plt.subplots()
-        ax1.plot(   [0, self.std_tangent], [self.risk_free_rate, self.return_tangent], c="r", label="Tangent")
-        ax1.scatter([0, self.std_tangent], [self.risk_free_rate, self.return_tangent], marker="*", s=100, c="r", label="Tangency Portfolio")
-        plotting.plot_weights(self.tangency_portfolio, ax=ax2)
-        return ax2
+    def plot_optimal_and_cal(self, ax, rfr):
+        """Plot optimal portfolio, min variance portfolio, and Capital Allocation Line on the efficient frontier"""
+        ax.plot(self.std_tangent, self.return_tangent, 'mo', markersize=10, 
+               label=f'Optimal ({self.return_tangent*100:.1f}%)', zorder=5)
+        
+        # Draw Capital Allocation Line (CAL) from risk-free rate to optimal portfolio
+        ax.plot([0, self.std_tangent], [rfr, self.return_tangent], 'g--', 
+               linewidth=1, alpha=0.7, label='Capital Allocation Line', zorder=4)
 
+        # Min variance portfolio
+        if not np.isnan(self.std_min_var):
+            ax.plot(self.std_min_var, self.return_min_var, 'co', markersize=10,
+                   label=f'Min Variance ({self.return_min_var*100:.1f}%)', zorder=5)
 
+    def plot_capm(self, ax=None):
+        """Plot CAPM graph: beta (x-axis) vs growth (y-axis)"""
+        if not ax:
+            _, ax = plt.subplots()
+        
+        betas = []
+        growths = []
+        labels = []
+        
+        for symbol, market, growth, full_symbol in zip(self.symbols, self.markets, self.annual_growth_forecasts, self.full_symbols):
+            beta = self.beta_dictionary.get(full_symbol, np.nan)
+            
+            if not np.isnan(beta) and not np.isnan(growth):
+                betas.append(beta)
+                growths.append(growth * 100)  # convert to percentage
+                labels.append(symbol)
+        
+        if betas:
+            ax.scatter(betas, growths, alpha=0.6, s=100, label='Individual Assets')
+            for i, label in enumerate(labels):
+                ax.annotate(label, (betas[i], growths[i]), fontsize=9, alpha=0.8,
+                           xytext=(5, 5), textcoords='offset points')
+            ax.set_xlabel("Beta")
+            ax.set_ylabel("Expected Return (%)")
+            ax.set_title("CAPM")
+            ax.grid(True, alpha=0.3)
+            ax.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
+            ax.axvline(x=1, color='r', linestyle='--', linewidth=0.5, alpha=0.5, label='Market Beta=1')
+            
+            # Add risk-free rate reference
+            rfr = market_data.get_risk_free_rate() * 100
+            ax.plot(0, rfr, 'go', markersize=12, label=f'Risk-Free Rate ({rfr:.1f}%)', zorder=4)
+            
+            # Add market index reference
+            mkt_return = market_data.get_market_return() * 100
+            ax.plot(1, mkt_return, 'go', markersize=12, label=f'Market (S&P 500: {mkt_return:.1f}%)', zorder=4)
+            
+            # Draw Security Market Line (SML) from risk-free rate to market
+            ax.plot([0, 1], [rfr, mkt_return], 'g--', 
+                   linewidth=1, alpha=0.7, label='Security Market Line', zorder=3)
+
+            # Tangency portfolio
+            if hasattr(self, 'beta_tangent') and not np.isnan(self.beta_tangent):
+                ax.plot(self.beta_tangent, self.return_tangent * 100, 'mo', markersize=10,
+                       label='Optimal', zorder=5)
+
+            # Min variance portfolio
+            if hasattr(self, 'beta_min_var') and not np.isnan(self.beta_min_var):
+                ax.plot(self.beta_min_var, self.return_min_var * 100, 'co', markersize=10,
+                       label='Min Variance', zorder=5)
+        else:
+            ax.text(0.5, 0.5, 'No beta data available', 
+                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+        
+        return ax
 
 
 if __name__ == '__main__':

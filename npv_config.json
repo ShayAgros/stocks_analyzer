@@ -1,0 +1,44 @@
+{
+    "npv_common": {
+        "discount_rate_percent": 10
+    },
+    "npv_assumptions": {
+        "short_term_growth_duration": 8,
+        "maximal_long_term_growth_rate_percent": 3,
+        "long_term_growth_duration": -1,
+        "add_book_value": true,
+        "forward_to_present": false,
+        "short_term_is_linear": false,
+        "irr_search_step_percent": 0.1,
+        "irr_search_min": -0.9,
+        "irr_search_max": 1.0,
+        "portfolio_risk_free_rate_percent": 4
+    },
+    "linear_irr": {
+        "long_term_growth_duration": 0,
+        "short_term_growth_duration": 10
+    },
+    "npv_calculator": {
+        "default_growth_time": 5,
+        "default_perpetuity_growth_percent": 2,
+        "default_discount_rate_percent": 10
+    },
+    "portfolio": {
+        "use_past_growth": true,
+        "forecast_growth_field": "irr[%]",
+        "use_shrinkage": true
+    },
+    "tldr_fields": [
+        "pe_ratio",
+        "price_to_book",
+        "peg_ratio",
+        "irr[%]",
+        "dcf_discount_ratio",
+        "current_ratio",
+        "growth_rate",
+        "bv_growth_rate",
+        "healthy",
+        "overvalued",
+        "leveraged"
+    ]
+}

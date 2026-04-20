@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from ticker import Ticker, StatisticsException, TickerGroup
+from ticker import Ticker, StatisticsException, TickerGroup, NPV_ASSUMPTIONS, TLDR_FIELDS
 from yfinance_info import YfinanceException
 from reports import MsnReportsException
 from PyQt5.QtWidgets import QApplication, QFileDialog
@@ -250,24 +250,18 @@ def group_tickers(tickers:list, filter_non_healthy:bool) -> TickerGroup:
     return ticker_group
 
 
-tldr_statistics = [  # a less overwhelming set of statistics
-            "name",
+tldr_statistics = TLDR_FIELDS if TLDR_FIELDS else [  # a less overwhelming set of statistics
             "pe_ratio",
             "price_to_book",
-            "pe*bv",
             "peg_ratio",
             "irr[%]",
-            "naive_time_to_profit",
-            "basic_discount_ratio",
             "dcf_discount_ratio",
             "current_ratio",
             "growth_rate",
             "bv_growth_rate",
-            "revenue_growth_rate",
             "healthy",
             "overvalued",
             "leveraged",
-            "updated at",
         ]
 
 def select_stocks_file(parent_widget=None) -> str :
@@ -292,7 +286,7 @@ def main():
     # 5) optionally, run portfolio correlation analysis
     run_optimize = False
     filter_non_healthy = True
-    risk_free_rate = 4 / 100
+    risk_free_rate = NPV_ASSUMPTIONS["portfolio_risk_free_rate_percent"] / 100
     my_stocks_file = select_stocks_file()
 
     csv_path  = ".".join(basename(my_stocks_file).split(".")[:-1]) + "_statistics.csv"
@@ -313,11 +307,13 @@ def main():
 
     # optimizer:
     if run_optimize:
+        import matplotlib.pyplot as plt
         print("starting our optimizer")
         portfolio_optimizer = group_tickers(tickers, filter_non_healthy)
         portfolio_optimizer.risk_free_rate = risk_free_rate
         print("plotting")
-        portfolio_optimizer.optimize()
+        portfolio_optimizer.plot_frontier()
+        plt.show()
 
 
 

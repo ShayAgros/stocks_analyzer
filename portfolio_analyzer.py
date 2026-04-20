@@ -2,7 +2,7 @@
 
 from matplotlib import pyplot as plt
 from yfinance_info import YahooInfo
-from ticker import TickerGroup, search_growth, Ticker
+from ticker import TickerGroup, search_growth, Ticker, PORTFOLIO_CONFIG
 from portfolio import Portfolio, PortfolioGui
 from datetime import datetime, timedelta
 import numpy as np
@@ -17,7 +17,7 @@ Calculate your average portfolio's growth, and compare it to an index
 *   file can have blank lines & commented-out ones
 
 Table Format (tab separated):
-Ticker	Market	Date	Amount	BuyNotSell	Cost
+Ticker	Market	Date	Amount	Action	Cost
 """
 
 sep  = "\t"
@@ -32,7 +32,14 @@ def read_tsv(file):
 
 def get_buy_amount(df):
     keys = df.index if isinstance(df, pd.Series) else df.columns
-    buy_sign = df["BuyNotSell"] * 2 - 1 if "BuyNotSell" in keys else 1
+    if "Action" in keys:
+        action = df["Action"]
+        if isinstance(action, str):
+            buy_sign = {"BUY": 1, "SELL": -1, "TRACK": 0}[action.upper()]
+        else:
+            buy_sign = action.str.upper().map({"BUY": 1, "SELL": -1, "TRACK": 0})
+    else:
+        buy_sign = 1
     buy_amount = buy_sign * (df["Amount"] if "Amount" in keys else 0)
     return buy_amount
 
@@ -55,7 +62,7 @@ def create_portfolio(table):
             markets.append(market)
             ids.append((symbol, market))
             amounts.append(buy_amount)
-    return Portfolio(symbols, markets, amounts, use_past_growth=True)
+    return Portfolio(symbols, markets, amounts, use_past_growth=PORTFOLIO_CONFIG["use_past_growth"])
 
 
 def get_get_npv(table):  # will return the lambda function
@@ -138,20 +145,32 @@ class HistoricPortfolioGui(PortfolioGui):
             "            {:.2f}% / yr"
         ).format(money_invested, portfolio_value, portfolio_irr,
                  index_name, money_invested, index_value, index_irr)
-        self.set_summary(summary, perf_df)
+        
+        # Merge performance data with portfolio table
+        portfolio_table = portfolio.get_portfolio_table_df()
+        merged_df = perf_df[["Annualized Price Growth"]].join(portfolio_table, how='left')
+        merged_df = merged_df[["Weight (%)", "Annualized Price Growth", "Portfolio Beta"]]
+        self.set_summary(summary, merged_df)
 
 # Future estimate:
 
 
 
-if __name__ == '__main__':
-    from PyQt5.QtWidgets import QApplication
+def main():
+    from PyQt5.QtWidgets import QApplication, QFileDialog
     from qt_material import apply_stylesheet
+    import os
     app = QApplication(sys.argv)
     apply_stylesheet(app, theme='dark_red.xml')
 
-    file = "test_inputs/Portfolio1.tsv"
-    #file = "test_inputs/my_stocks.tsv"
+
+    default_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_inputs")
+    file, _ = QFileDialog.getOpenFileName(
+        None, "Select Portfolio TSV", default_dir, "TSV Files (*.tsv);;All Files (*)"
+    )
+    if not file:
+        sys.exit(0)
+
     run_portfolio_optimization = True
 
     table = read_tsv(file)
@@ -177,6 +196,10 @@ if __name__ == '__main__':
     
     gui.show()
     sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    main()
 
 
 

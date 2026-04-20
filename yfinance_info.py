@@ -3,7 +3,13 @@
 import yfinance as yf
 import datetime
 import numpy as np
-from pypfopt.risk_models import fix_nonpositive_semidefinite
+import os
+import json
+from pypfopt.risk_models import fix_nonpositive_semidefinite, CovarianceShrinkage
+
+_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "npv_config.json")
+with open(_config_path, "r") as _f:
+    _PORTFOLIO_CONFIG = json.load(_f).get("portfolio", {})
 
 
 class YfinanceException(Exception):
@@ -31,6 +37,7 @@ market_to_yf_market = {
         "KRX"       : "KS",  # Korea
         "SHE"       : "SZ",
         "TSE"       : "TO",  # Toronto
+        "ASX"       : "AX",  # Australia
     }
 
 def get_ticker_from_standard_symbols(symbol:str, market:str):
@@ -157,6 +164,7 @@ class YahooGroup:
         """
         if self.history is None:
             self.history = self.yf_ticker.history(period="10y")["Close"].iloc[::30]  # todo better implement period & interval (more years and real months?, maybe add overlaps)
+            self.history = self.history.ffill(limit=4)  # fill short gaps (holidays, exchange mismatches) but preserve real missing data
             self.valid_full_symbols = self.history.columns[self.history.notna().mean() >= 0.8].tolist()
 
     def get_monthly_growths(self):
@@ -167,14 +175,21 @@ class YahooGroup:
 
     def get_past_annual_performance(self, symbol, market, is_yahoo=False):
         full_symbol = symbol if is_yahoo else get_ticker_from_standard_symbols(symbol,market)[0]
-        monthly = self.get_monthly_growths()[full_symbol].mean()
+        monthly = self.get_monthly_growths()[full_symbol].dropna().mean()
         return (1 + monthly) ** 12 - 1
 
     def get_cov(self):
         monthly = self.get_monthly_growths()
-        cov = monthly[self.valid_full_symbols].cov() * 12  # multiply by 12 to convert from monthly to annual variance
-        cov = fix_nonpositive_semidefinite(cov)
-        self.cov = cov.values
+        valid_monthly = monthly[self.valid_full_symbols]
+
+        if _PORTFOLIO_CONFIG.get("use_shrinkage", True):
+            cs = CovarianceShrinkage(valid_monthly, returns_data=True, frequency=12)
+            cov = cs.ledoit_wolf()
+        else:
+            cov = valid_monthly.cov() * 12  # multiply by 12 to convert from monthly to annual variance
+            cov = fix_nonpositive_semidefinite(cov)
+
+        self.cov = cov.values if hasattr(cov, 'values') else cov
 
     # -----------------------------------------------------------------------------
 
