@@ -164,7 +164,7 @@ def main():
     apply_stylesheet(app, theme='dark_red.xml')
 
 
-    default_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_inputs")
+    default_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inputs")
     file, _ = QFileDialog.getOpenFileName(
         None, "Select Portfolio TSV", default_dir, "TSV Files (*.tsv);;All Files (*)"
     )

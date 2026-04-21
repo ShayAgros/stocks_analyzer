@@ -856,7 +856,7 @@ class Ticker:
         ax.set_xlim((self._price_series.index[0], self._price_series.index[-1]))
 
         fig.set_layout_engine('tight')
-        fig.suptitle(self.symbol + "({:,.2f}): IRR {:.1f}% L {:.1f}%, PE {:.1f}".format(
+        fig.suptitle(self.symbol + " ({:,.2f}) — IRR {:.1f}% | Linear {:.1f}% | PE {:.1f}".format(
             self.yahoo_info.get_stock_price_now(), *(self.get_irr()), self.get_projected_pe()))
 
         if show:
@@ -870,8 +870,8 @@ class Ticker:
         index = self._price_series.index.unique()
         # set timezone to allow comparing with the index
         timezone = index.tzinfo
-        from_date = timezone.localize(from_date)
-        to_date = timezone.localize(to_date)
+        from_date = from_date.replace(tzinfo=timezone)
+        to_date = to_date.replace(tzinfo=timezone)
         start_price = self._price_series.loc[index[index.get_indexer([from_date], method="nearest")]].iloc[0]
         end_price = self._price_series.loc[index[index.get_indexer([to_date], method="nearest")]].iloc[0]
         change = (end_price - start_price) / start_price
@@ -1094,11 +1094,21 @@ class TickerGroup(YahooGroup):
         beta = w_arr[valid] @ b_arr[valid] / w_arr[valid].sum() if valid.any() else np.nan
         return weights, ret, std, beta
 
+    def _print_weights(self, title, weights, ret, std, beta):
+        """Print portfolio weights to terminal."""
+        print(f"\n{title}:")
+        print(f"  Return: {ret*100:.1f}%  Std: {std*100:.1f}%  Beta: {beta:.2f}")
+        for symbol, weight in sorted(weights.items(), key=lambda x: -x[1]):
+            if weight > 0.001:
+                print(f"  {symbol}: {weight*100:.1f}%")
+
     def find_tangency_portfolio(self):
         """Calculate the optimal (tangency) portfolio using max Sharpe ratio"""
         try:
             self.tangency_portfolio, self.return_tangent, self.std_tangent, self.beta_tangent = \
                 self._solve_portfolio(lambda ef: ef.max_sharpe(risk_free_rate=self.risk_free_rate))
+            self._print_weights("Optimal Portfolio (Max Sharpe)", self.tangency_portfolio,
+                                self.return_tangent, self.std_tangent, self.beta_tangent)
         except Exception as e:
             print(f"Warning: Could not calculate optimal portfolio: {e}")
 
@@ -1107,6 +1117,8 @@ class TickerGroup(YahooGroup):
         try:
             self.min_var_portfolio, self.return_min_var, self.std_min_var, self.beta_min_var = \
                 self._solve_portfolio(lambda ef: ef.min_volatility())
+            self._print_weights("Min Variance Portfolio", self.min_var_portfolio,
+                                self.return_min_var, self.std_min_var, self.beta_min_var)
         except Exception as e:
             print(f"Warning: Could not calculate min variance portfolio: {e}")
 

@@ -268,7 +268,7 @@ def select_stocks_file(parent_widget=None) -> str :
     my_stocks_file, _ = QFileDialog.getOpenFileName(
         parent_widget,
         "Select Stocks File",
-        "test_inputs",
+        "inputs",
         "Followed Stocks (*.txt)"
     )
     if not my_stocks_file:

@@ -1,8 +1,78 @@
 # Stock & Portfolio Analyzer
 
-A quantitative stock analysis and portfolio optimization tool with an interactive GUI. Fetches live data from Yahoo Finance, computes 40+ financial metrics per stock, and provides portfolio-level analysis including efficient frontier optimization, CAPM modeling, and DCF valuation.
+A quantitative stock analysis and portfolio optimization tool.
+
+Are you sick of investing according to vibes alone? Ever wanted to incorporate solid economic & mathematical principles into your portfolio, but reading financial statements is just overwhelming? If so, then this might be just the tool you always wanted!
+
+Our tool is here to help you with all the steps in portfolio creation:
+- Throw in a bunch of stocks you think are interesting
+- Screen out any with a sketchy balance sheet or that are just overvalued
+- Get into more manual inspection and price target determination with our NPV calculator and financial graphs
+- At the end, find the right portfolio composition to minimize risk and correlation while maintaining high growth
+- Keep track of your past investment performance
+
+    
+ Our tool fetches live data, computes 40+ financial metrics per stock, and provides portfolio-level analysis including efficient frontier optimization, CAPM modeling, and DCF valuation.
 
 ![Portfolio Analyzer](images/portfolio%20analyzer%20example.png)
+![Stock Screener](images/screener%20example.png)
+![DCF Calculator](images/npv%20calculator%20example.png)
+
+## Table of Contents
+- [Setup](#setup)
+- [Usage](#usage)
+- [Features](#features)
+  - [Stock Screening](#stock-screening)
+  - [Portfolio Analysis](#portfolio-analysis)
+  - [Portfolio Optimization](#portfolio-optimization)
+  - [DCF Valuation Calculator](#dcf-valuation-calculator)
+- [Mathematical Models](#mathematical-models)
+  - [Growth Estimation — Log-Linear Regression](#growth-estimation--log-linear-regression)
+  - [Intrinsic Valuation — DCF & NPV](#intrinsic-valuation--dcf--npv)
+  - [Risk & Return — CAPM](#risk--return--capm)
+  - [Portfolio Theory — Covariance & Efficient Frontier](#portfolio-theory--covariance--efficient-frontier)
+  - [Optimization — Maximum Sharpe Ratio](#optimization--maximum-sharpe-ratio)
+  - [Bond Valuation — Yield to Maturity](#bond-valuation--yield-to-maturity)
+  - [CAPM & Portfolio Visualization](#capm--portfolio-visualization)
+- [Architecture](#architecture)
+- [Input Formats](#input-formats)
+- [Dependencies](#dependencies)
+- [Disclaimer](#disclaimer)
+- [License](#license)
+- [Authors](#authors)
+
+## Setup
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+```
+
+This installs the package in editable mode — any code changes take effect immediately without reinstalling.
+
+## Usage
+
+**Portfolio analyzer** (main app — performance tracking, optimization, benchmark comparison):
+```bash
+portfolio-analyzer
+```
+
+**Stock screener** (batch analysis, CSV export, filterable table):
+```bash
+stocks-analyzer
+```
+
+**DCF valuation calculator** (interactive per-stock valuation):
+```bash
+npv-calculator
+```
+
+A helper script `analyzer.sh` is included that creates the venv, installs dependencies, and launches the portfolio analyzer in one step:
+```bash
+./analyzer.sh
+```
+
 
 ## Features
 
@@ -145,7 +215,7 @@ BRK.B NYSE
 2330 TPE
 ```
 
-**Portfolio transactions** (`test_inputs/Portfolio1.tsv`):
+**Portfolio transactions** (`inputs/Portfolio_indices_example.tsv`):
 ```
 Ticker  Market  Date        Amount  Action  Cost
 QCOM    NASDAQ  2022-01-01  1       BUY         141.6
@@ -154,43 +224,11 @@ MSFT    NASDAQ  2020-10-05  2       BUY         100
 
 Not all columns are required. The tool adapts to the information provided:
 
-| Columns present | Available features |
-|---|---|
-| `Ticker`, `Market`, `Date`, `Amount`, `Action`, `Cost` | Full analysis: portfolio optimization, historic IRR, benchmark comparison, per-ticker performance |
-| `Ticker`, `Market`, `Amount` | Portfolio optimization with current holdings (efficient frontier, sector allocation, CAPM) — no historic performance |
-| `Ticker`, `Market` | Correlation analysis and efficient frontier with equal weights — no performance tracking |
-
-## Setup
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -e .
-```
-
-This installs the package in editable mode — any code changes take effect immediately without reinstalling.
-
-## Usage
-
-**Portfolio analyzer** (main app — performance tracking, optimization, benchmark comparison):
-```bash
-portfolio-analyzer
-```
-
-**Stock screener** (batch analysis, CSV export, filterable table):
-```bash
-stocks-analyzer
-```
-
-**DCF valuation calculator** (interactive per-stock valuation):
-```bash
-npv-calculator
-```
-
-A helper script `analyzer.sh` is included that creates the venv, installs dependencies, and launches the portfolio analyzer in one step:
-```bash
-./analyzer.sh
-```
+| Columns present                                        | Available features                                                                                                   |
+| --------------------------------------------------------| ----------------------------------------------------------------------------------------------------------------------|
+| `Ticker`, `Market`, `Date`, `Amount`, `Action`, `Cost` | Full analysis: portfolio optimization, historic IRR, benchmark comparison, per-ticker performance                    |
+| `Ticker`, `Market`, `Amount`                           | Portfolio optimization with current holdings (efficient frontier, sector allocation, CAPM) — no historic performance |
+| `Ticker`, `Market`                                     | Correlation analysis and efficient frontier with equal weights — no performance tracking                             |
 
 ## Dependencies
 
@@ -199,6 +237,10 @@ A helper script `analyzer.sh` is included that creates the venv, installs depend
 - **PyPortfolioOpt** — mean-variance portfolio optimization
 - **pandas**, **numpy**, **scipy** — numerical computation
 - **matplotlib** — charting and visualization
+
+## Disclaimer
+
+This tool is under active development, built mainly out of personal interest and curiosity. It is intended for educational and research purposes only and does not constitute financial advice. Always consult a qualified financial professional before making investment decisions.
 
 ## License
 

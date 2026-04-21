@@ -244,8 +244,9 @@ class Portfolio(TickerGroup):
         ax = self.plot_frontier(ax=ax)
         # Plot portfolio point with actual std (axis labels will show normalized values)
         print(f"[plot_portfolio] std={self.portfolio_std}, growth={self.portfolio_annual_growth_forecast}, beta={self.portfolio_beta}")
-        ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast, 'ro',
-               label=f'Portfolio ({self.portfolio_annual_growth_forecast*100:.1f}%)')
+        ax.plot(self.portfolio_std, self.portfolio_annual_growth_forecast, 'ro', markersize=10,
+               label=f'Portfolio ({self.portfolio_annual_growth_forecast*100:.1f}%)', zorder=6)
+        ax.legend(fontsize=8, markerscale=0.6)  # refresh legend to include portfolio dot
 
     def plot_portfolio_on_capm(self, ax):
         """Plot the current portfolio point on the CAPM graph"""
@@ -293,7 +294,7 @@ class PortfolioGui(QWidget):
             # Add legend after all elements are plotted
             ax_capm.legend(fontsize=8, markerscale=0.6)
             
-            fig_frontier.tight_layout()
+            fig_frontier.subplots_adjust(hspace=0.35)
             canvas = FigureCanvas(fig_frontier)
             frontier_widget = QWidget()
             frontier_layout = QVBoxLayout(frontier_widget)
