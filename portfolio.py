@@ -6,7 +6,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSplitter
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSplitter, QFileDialog
 from PyQt5.QtCore import Qt
 
 from ticker import Ticker, TickerGroup, market_data
@@ -342,18 +342,32 @@ class PortfolioGui(QWidget):
         btn = QPushButton("Open Screener")
         btn.clicked.connect(self._open_screener)
         self._stats_layout.addWidget(btn)
-        
-        # Add "Open Optimal" button if we have tangency portfolio
-        if hasattr(portfolio, 'tangency_portfolio') and portfolio.tangency_portfolio:
+
+        # Optimal / Min Variance buttons on the same line
+        opt_row = QHBoxLayout()
+        if portfolio.tangency_portfolio:
             btn_optimal = QPushButton("Open Optimal")
             btn_optimal.clicked.connect(self._open_optimal)
-            self._stats_layout.addWidget(btn_optimal)
+            opt_row.addWidget(btn_optimal)
 
-        # Add "Open Min Variance" button if we have min variance portfolio
-        if hasattr(portfolio, 'min_var_portfolio') and portfolio.min_var_portfolio:
+        if portfolio.min_var_portfolio:
             btn_min_var = QPushButton("Open Min Variance")
             btn_min_var.clicked.connect(self._open_min_variance)
-            self._stats_layout.addWidget(btn_min_var)
+            opt_row.addWidget(btn_min_var)
+
+        if opt_row.count() > 0:
+            self._stats_layout.addLayout(opt_row)
+
+        # Build Portfolio & Save As on the same line
+        build_row = QHBoxLayout()
+        btn_build = QPushButton("Build Portfolio")
+        btn_build.clicked.connect(self._open_portfolio_builder)
+        build_row.addWidget(btn_build)
+
+        btn_save = QPushButton("Save As")
+        btn_save.clicked.connect(self._save_portfolio)
+        build_row.addWidget(btn_save)
+        self._stats_layout.addLayout(build_row)
 
         # Only show pie chart if portfolio has holdings
         if portfolio.has_holdings:
@@ -388,7 +402,47 @@ class PortfolioGui(QWidget):
         df = self._portfolio.to_df()
         self._screener_window = tickers_gui(df)
         self._screener_window.show()
-    
+
+    def _open_portfolio_builder(self):
+        from gui.portfolio_builder import PortfolioBuilderDialog
+        p = self._portfolio
+        ticker_data = []
+        for sym, mkt, price in zip(p.symbols, p.markets, p.current_prices):
+            ticker_data.append((sym, mkt, price))
+        amounts = list(p.quantities) if p.has_holdings else None
+        self._builder_dialog = PortfolioBuilderDialog(
+            ticker_data,
+            existing_tickers=p.tickers_dictionary,
+            use_past_growth=p.use_past_growth,
+            amounts=amounts,
+            parent=self
+        )
+        self._builder_dialog.show()
+
+    def _save_portfolio(self):
+        import os
+        default_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inputs")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Portfolio", os.path.join(default_dir, "portfolio.tsv"),
+            "TSV Files (*.tsv)"
+        )
+        if not path:
+            return
+
+        p = self._portfolio
+        rows = []
+        if p.has_holdings:
+            rows.append("Ticker\tMarket\tAmount")
+            for sym, mkt, qty in zip(p.symbols, p.markets, p.quantities):
+                rows.append(f"{sym}\t{mkt}\t{qty}")
+        else:
+            rows.append("Ticker\tMarket")
+            for sym, mkt in zip(p.symbols, p.markets):
+                rows.append(f"{sym}\t{mkt}")
+
+        with open(path, "w") as f:
+            f.write("\n".join(rows) + "\n")
+
     def _open_optimal(self):
         self._open_portfolio_from_weights(self._portfolio.tangency_portfolio, "Optimal Portfolio (Tangency)")
 

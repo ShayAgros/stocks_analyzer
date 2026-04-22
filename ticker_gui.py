@@ -80,6 +80,8 @@ class tickers_gui(QWidget):
 
         self.tickers_table.setModel(self.proxy_model)
         self.tickers_table.setSortingEnabled(False)
+        self.tickers_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.tickers_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
         header = self.tickers_table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
@@ -98,6 +100,10 @@ class tickers_gui(QWidget):
         self.export_btn = QPushButton("Export CSV")
         self.export_btn.clicked.connect(self._export_csv)
         check_layout.addWidget(self.export_btn)
+
+        self.build_btn = QPushButton("Build Portfolio")
+        self.build_btn.clicked.connect(self._open_portfolio_builder)
+        check_layout.addWidget(self.build_btn)
 
         self.healthy_cb.stateChanged.connect(self._apply_filters)
         self.overvalued_cb.stateChanged.connect(self._apply_filters)
@@ -136,6 +142,35 @@ class tickers_gui(QWidget):
         base, ext = os.path.splitext(path)
         self.full_df.to_csv(base + ext)
         self.tldr_df.to_csv(base + "_tldr" + ext)
+
+    def _open_portfolio_builder(self):
+        from gui.portfolio_builder import PortfolioBuilderDialog
+
+        # If rows are selected, use only those; otherwise use all
+        selected_proxy_rows = self.tickers_table.selectionModel().selectedRows()
+        if len(selected_proxy_rows) > 1:
+            source_rows = sorted(set(
+                self.proxy_model.mapToSource(idx).row() for idx in selected_proxy_rows
+            ))
+            indices = [self.full_df.index[r] for r in source_rows]
+        else:
+            indices = list(self.full_df.index)
+
+        ticker_data = []
+        for idx in indices:
+            parts = idx.split(":", 1)
+            if len(parts) == 2:
+                symbol, market = parts
+            else:
+                continue
+            price = self.full_df.loc[idx].get("price on update", 0)
+            if price is None or (isinstance(price, float) and price != price):
+                price = 0
+            ticker_data.append((symbol, market, price))
+        self._builder_dialog = PortfolioBuilderDialog(
+            ticker_data, parent=self
+        )
+        self._builder_dialog.show()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape or e.text() == 'q':
