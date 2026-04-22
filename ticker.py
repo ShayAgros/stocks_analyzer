@@ -146,9 +146,12 @@ def search_growth(npv_function, price, min_growth,
             best_growth = growth
 
     irr = best_growth * 100
-    if skipped > 0:
-        print("error in npv calculation (%s)" % skipped)
-    #plt.show()
+    if best_result is not None and price > 0:
+        relative_error = best_result / price
+        if relative_error > 0.05:
+            print(f"IRR search: poor fit (error {relative_error*100:.1f}% of price)")
+    elif best_result is None:
+        print("IRR search: no valid NPV found in search range")
     return irr
 
 
